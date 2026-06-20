@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import {
   BarChart3,
@@ -44,9 +45,13 @@ export function AppShell({ children, title }: { children: React.ReactNode; title
           <div className="flex items-center gap-3 sm:gap-6">
             {/* Logo */}
             <Link href="/" className="flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500 text-sm font-bold text-slate-950">
-                GS
-              </div>
+              <Image
+                src="/icon-192.png"
+                alt="GridSight Logo"
+                width={32}
+                height={32}
+                className="rounded-lg object-cover"
+              />
               <div className="hidden xs:block">
                 <p className="text-sm font-semibold leading-none">GridSight</p>
                 <p className="text-[10px] text-slate-500">Parking Violation Intelligence</p>

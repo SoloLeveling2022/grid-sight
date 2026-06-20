@@ -109,9 +109,13 @@ export default function HomePage() {
           <div className="grid grid-cols-1 items-center gap-12 lg:grid-cols-12">
             <div className="flex flex-col justify-center lg:col-span-7">
               <div className="mb-6 flex w-fit cursor-pointer items-center gap-2 group/logo">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500 font-bold text-slate-950 transition-all duration-300 group-hover/logo:rotate-3 group-hover/logo:scale-105">
-                  GS
-                </div>
+                <Image
+                  src="/icon-192.png"
+                  alt="GridSight Logo"
+                  width={40}
+                  height={40}
+                  className="rounded-xl object-cover transition-all duration-300 group-hover/logo:rotate-3 group-hover/logo:scale-105"
+                />
                 <span className="text-sm uppercase tracking-widest text-slate-500 transition-colors duration-300 group-hover/logo:text-slate-300">GridSight</span>
               </div>
 
