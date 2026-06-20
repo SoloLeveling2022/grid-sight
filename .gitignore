@@ -39,3 +39,16 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+AGENTS.md
+CLAUDE.md
+COMPLETION_SUMMARY.md
+CURRENT_CONTEXT.md
+current_progress.md
+FlipKart Gridlock Solution.pdf
+git_commands.md
+gridsight_alignment_report.md
+jan to may police violation_anonymized791b166 (1).csv
+MAPMYINDIA_GUIDE.md
+README_REFACTORING.md
+walkthrough.md
