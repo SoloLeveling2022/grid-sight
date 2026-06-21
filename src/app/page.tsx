@@ -27,7 +27,7 @@ export default function HomePage() {
     fetch(`${API_BASE_URL}/api/violations/meta`)
       .then((r) => r.json())
       .then((data) => setMeta(data))
-      .catch(() => {}); // silently keep null
+      .catch(() => { }); // silently keep null
   }, []);
 
   useEffect(() => {
@@ -38,8 +38,8 @@ export default function HomePage() {
 
   useEffect(() => {
     // 1. Check if running standalone
-    const isStandalone = 
-      window.matchMedia("(display-mode: standalone)").matches || 
+    const isStandalone =
+      window.matchMedia("(display-mode: standalone)").matches ||
       (navigator as any).standalone;
 
     if (isStandalone) return;
@@ -150,11 +150,11 @@ export default function HomePage() {
                     <ArrowRight className="h-4 w-4 transition-transform duration-300 group-hover/btn:translate-x-1" />
                   </Button>
                 </Link>
-                {/* <Link href="/auth?redirect=/citizen">
+                <Link href="/architecture">
                   <Button size="lg" variant="outline" className="cursor-pointer transition-all duration-300 hover:border-amber-500/40 hover:bg-amber-500/5 hover:text-amber-400">
-                    Citizen Advisory
+                    System Architecture
                   </Button>
-                </Link> */}
+                </Link>
               </div>
             </div>
 
@@ -232,7 +232,7 @@ export default function HomePage() {
       {/* Premium Install PWA popup prompt */}
       {showInstallPrompt && (
         <div className="fixed bottom-4 right-4 z-50 max-w-sm w-[calc(100vw-32px)] rounded-xl border border-slate-800/80 bg-[#0c1220]/95 shadow-2xl shadow-amber-500/5 backdrop-blur-md p-4 animate-in fade-in slide-in-from-bottom-5 duration-300">
-          <button 
+          <button
             onClick={handleDismiss}
             className="absolute top-2.5 right-2.5 text-slate-500 hover:text-slate-300 transition-colors p-1"
             aria-label="Dismiss prompt"
