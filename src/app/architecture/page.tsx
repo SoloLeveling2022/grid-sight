@@ -315,11 +315,11 @@ export default function ArchitecturePage() {
     return scenario ? scenario.activeNodes.includes(nodeId) : false;
   };
 
-  const handleCopyMermaid = () => {
-    navigator.clipboard.writeText(MERMAID_CODE);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
+  // const handleCopyMermaid = () => {
+  //   navigator.clipboard.writeText(MERMAID_CODE);
+  //   setCopied(true);
+  //   setTimeout(() => setCopied(false), 2000);
+  // };
 
   const filteredScenarios = SCENARIOS.filter(
     (s) => categoryFilter === "all" || s.category === categoryFilter
@@ -793,7 +793,7 @@ export default function ArchitecturePage() {
         </div>
 
         {/* Section 2: Download Premium Slides Graphic */}
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-8 items-center bg-slate-900/30 border border-slate-800 rounded-2xl p-8 mb-16 relative overflow-hidden">
+        {/* <div className="grid grid-cols-1 md:grid-cols-12 gap-8 items-center bg-slate-900/30 border border-slate-800 rounded-2xl p-8 mb-16 relative overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-r from-amber-500/5 via-transparent to-transparent pointer-events-none" />
           <div className="md:col-span-7 flex flex-col gap-4">
             <span className="px-3 py-1 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20 w-fit uppercase tracking-widest">
@@ -842,7 +842,7 @@ export default function ArchitecturePage() {
               />
             </div>
           </div>
-        </div>
+        </div> */}
 
         {/* Section 3: Tech Stack Matrix */}
         <div className="mb-16">
@@ -885,7 +885,7 @@ export default function ArchitecturePage() {
         </div>
 
         {/* Section 4: Copyable Mermaid Code */}
-        <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-6 relative overflow-hidden">
+        {/* <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-6 relative overflow-hidden">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-2">
               <CodeIcon className="h-4 w-4 text-amber-500" />
@@ -916,99 +916,99 @@ export default function ArchitecturePage() {
           <pre className="text-xs text-slate-400 bg-slate-900/60 border border-slate-800 rounded-lg p-4 font-mono overflow-x-auto max-h-[300px] leading-relaxed select-all">
             {MERMAID_CODE}
           </pre>
-        </div>
+        </div> */}
       </main>
     </div>
   );
 }
 
-function CodeIcon(props: React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg
-      {...props}
-      xmlns="http://www.w3.org/2000/svg"
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <polyline points="16 18 22 12 16 6" />
-      <polyline points="8 6 2 12 8 18" />
-    </svg>
-  );
-}
+// function CodeIcon(props: React.SVGProps<SVGSVGElement>) {
+//   return (
+//     <svg
+//       {...props}
+//       xmlns="http://www.w3.org/2000/svg"
+//       width="24"
+//       height="24"
+//       viewBox="0 0 24 24"
+//       fill="none"
+//       stroke="currentColor"
+//       strokeWidth="2"
+//       strokeLinecap="round"
+//       strokeLinejoin="round"
+//     >
+//       <polyline points="16 18 22 12 16 6" />
+//       <polyline points="8 6 2 12 8 18" />
+//     </svg>
+//   );
+// }
 
-const MERMAID_CODE = `flowchart TB
-    %% Styling definitions
-    classDef ingest fill:#1e293b,stroke:#ffd700,stroke-width:2px,color:#f8fafc;
-    classDef routing fill:#0f172a,stroke:#3b82f6,stroke-width:1.5px,color:#f8fafc;
-    classDef model fill:#1e1b4b,stroke:#d97706,stroke-width:1.5px,color:#f8fafc;
-    classDef db fill:#022c22,stroke:#10b981,stroke-width:1.5px,color:#f8fafc;
-    classDef client fill:#030712,stroke:#f59e0b,stroke-width:2px,color:#f8fafc;
+// const MERMAID_CODE = `flowchart TB
+//     %% Styling definitions
+//     classDef ingest fill:#1e293b,stroke:#ffd700,stroke-width:2px,color:#f8fafc;
+//     classDef routing fill:#0f172a,stroke:#3b82f6,stroke-width:1.5px,color:#f8fafc;
+//     classDef model fill:#1e1b4b,stroke:#d97706,stroke-width:1.5px,color:#f8fafc;
+//     classDef db fill:#022c22,stroke:#10b981,stroke-width:1.5px,color:#f8fafc;
+//     classDef client fill:#030712,stroke:#f59e0b,stroke-width:2px,color:#f8fafc;
 
-    %% Ingestion Layer
-    subgraph Ingestion ["Ingestion & Edge Layer"]
-        CCTV["Edge AI CCTV Feed<br/>(Stationary detection)"]:::ingest
-        Citizen["Citizen Portal / Form<br/>(Advisory portal)"]:::ingest
-        Drone["Drone Flight Simulator<br/>(Aerial verification)"]:::ingest
-        Signals["Smart Light Signals<br/>(Junction telemetry)"]:::ingest
-        Logs["Historical Offence Logs<br/>(298k+ records)"]:::ingest
-    end
+//     %% Ingestion Layer
+//     subgraph Ingestion ["Ingestion & Edge Layer"]
+//         CCTV["Edge AI CCTV Feed<br/>(Stationary detection)"]:::ingest
+//         Citizen["Citizen Portal / Form<br/>(Advisory portal)"]:::ingest
+//         Drone["Drone Flight Simulator<br/>(Aerial verification)"]:::ingest
+//         Signals["Smart Light Signals<br/>(Junction telemetry)"]:::ingest
+//         Logs["Historical Offence Logs<br/>(298k+ records)"]:::ingest
+//     end
 
-    %% Application & API Layer
-    subgraph Orchestration ["Orchestration & API Layer"]
-        FastAPI["REST API Engine<br/>(Python/FastAPI)"]:::routing
-        NextAPI["Next.js Server API Routes<br/>(Telephony Webhooks)"]:::routing
-        VoiceAgent["Intelligent Voice Agent<br/>(Speech-to-Action Parser)"]:::routing
-        Playground["Prompt Playground<br/>(Config panel)"]:::routing
-    end
+//     %% Application & API Layer
+//     subgraph Orchestration ["Orchestration & API Layer"]
+//         FastAPI["REST API Engine<br/>(Python/FastAPI)"]:::routing
+//         NextAPI["Next.js Server API Routes<br/>(Telephony Webhooks)"]:::routing
+//         VoiceAgent["Intelligent Voice Agent<br/>(Speech-to-Action Parser)"]:::routing
+//         Playground["Prompt Playground<br/>(Config panel)"]:::routing
+//     end
 
-    %% Intelligence Layer
-    subgraph Engine ["Analytics & Machine Learning Engine"]
-        DBSCAN["ML Model Core<br/>(DBSCAN Clustering)"]:::model
-        RFModel["ML Model Core<br/>(Random Forest Regressor)"]:::model
-        LLMOrch["Multi-Agent LLM Solver<br/>(Collaborative solvers)"]:::model
-    end
+//     %% Intelligence Layer
+//     subgraph Engine ["Analytics & Machine Learning Engine"]
+//         DBSCAN["ML Model Core<br/>(DBSCAN Clustering)"]:::model
+//         RFModel["ML Model Core<br/>(Random Forest Regressor)"]:::model
+//         LLMOrch["Multi-Agent LLM Solver<br/>(Collaborative solvers)"]:::model
+//     end
 
-    %% Data & Third-party integrations
-    subgraph Storage ["Datastores & Third-Party APIs"]
-        Atlas["Cloud NoSQL Database<br/>(NoSQL Document Store)"]:::db
-        LiveTraffic["Vector Map SDK & Flow APIs<br/>(Map SDK & Flow Telemetry)"]:::db
-        Telephony["Voice Telephony Gateway<br/>(Outbound Telephony API)"]:::db
-    end
+//     %% Data & Third-party integrations
+//     subgraph Storage ["Datastores & Third-Party APIs"]
+//         Atlas["Cloud NoSQL Database<br/>(NoSQL Document Store)"]:::db
+//         LiveTraffic["Vector Map SDK & Flow APIs<br/>(Map SDK & Flow Telemetry)"]:::db
+//         Telephony["Voice Telephony Gateway<br/>(Outbound Telephony API)"]:::db
+//     end
 
-    %% Client Presentation Layer
-    subgraph Clients ["Operational Interfaces (Next.js)"]
-        Dashboard["Next.js Client App<br/>(Zustand Stores)"]:::client
-        PublicView["Citizen Portal / Form<br/>(Detour advisory /citizen)"]:::client
-    end
+//     %% Client Presentation Layer
+//     subgraph Clients ["Operational Interfaces (Next.js)"]
+//         Dashboard["Next.js Client App<br/>(Zustand Stores)"]:::client
+//         PublicView["Citizen Portal / Form<br/>(Detour advisory /citizen)"]:::client
+//     end
 
-    %% Connections
-    CCTV -.-> IngestionAPI["/api/violations/detect-parking"]
-    IngestionAPI --> FastAPI
-    Citizen --> PublicView
-    PublicView --> NextAPI
-    Drone --> FastAPI
-    Signals --> FastAPI
-    Logs --> FastAPI
+//     %% Connections
+//     CCTV -.-> IngestionAPI["/api/violations/detect-parking"]
+//     IngestionAPI --> FastAPI
+//     Citizen --> PublicView
+//     PublicView --> NextAPI
+//     Drone --> FastAPI
+//     Signals --> FastAPI
+//     Logs --> FastAPI
 
-    FastAPI --> Atlas
-    FastAPI --> DBSCAN
-    FastAPI --> RFModel
-    FastAPI --> LLMOrch
+//     FastAPI --> Atlas
+//     FastAPI --> DBSCAN
+//     FastAPI --> RFModel
+//     FastAPI --> LLMOrch
 
-    RFModel --> LiveTraffic
-    LLMOrch --> Atlas
+//     RFModel --> LiveTraffic
+//     LLMOrch --> Atlas
 
-    Dashboard --> FastAPI
-    PublicView --> FastAPI
-    VoiceAgent --> NextAPI
-    NextAPI --> Telephony
-    Playground --> FastAPI
-    Playground --> LLMOrch
+//     Dashboard --> FastAPI
+//     PublicView --> FastAPI
+//     VoiceAgent --> NextAPI
+//     NextAPI --> Telephony
+//     Playground --> FastAPI
+//     Playground --> LLMOrch
 
-    Dashboard <--> VoiceAgent`;
+//     Dashboard <--> VoiceAgent`;
