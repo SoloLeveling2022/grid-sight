@@ -5,14 +5,30 @@ import Link from "next/link";
 import Image from "next/image";
 import { ArrowRight, Map, Mic, Shield, TrendingUp, Download, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { getViolationMeta } from "@/data/violations";
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+interface ViolationMeta {
+  totalCases: number;
+  sampledCases: number;
+  topStations: [string, number][];
+  topViolationTypes: [string, number][];
+}
 
 export default function HomePage() {
-  const meta = getViolationMeta();
+  const [meta, setMeta] = useState<ViolationMeta | null>(null);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [showInstallPrompt, setShowInstallPrompt] = useState(false);
   const [showInstructions, setShowInstructions] = useState(false);
   const [isIOS, setIsIOS] = useState(false);
+
+  // Fetch live KPI stats from FastAPI
+  useEffect(() => {
+    fetch(`${API_BASE_URL}/api/violations/meta`)
+      .then((r) => r.json())
+      .then((data) => setMeta(data))
+      .catch(() => {}); // silently keep null
+  }, []);
 
   useEffect(() => {
     if (typeof window !== "undefined" && navigator.userAgent) {
@@ -128,17 +144,17 @@ export default function HomePage() {
               </p>
 
               <div className="mt-10 flex flex-wrap gap-4">
-                <Link href="/police">
+                <Link href="/auth?redirect=/police">
                   <Button size="lg" className="group/btn relative cursor-pointer overflow-hidden transition-all duration-300">
                     Police Control Room
                     <ArrowRight className="h-4 w-4 transition-transform duration-300 group-hover/btn:translate-x-1" />
                   </Button>
                 </Link>
-                <Link href="/citizen">
+                {/* <Link href="/auth?redirect=/citizen">
                   <Button size="lg" variant="outline" className="cursor-pointer transition-all duration-300 hover:border-amber-500/40 hover:bg-amber-500/5 hover:text-amber-400">
                     Citizen Advisory
                   </Button>
-                </Link>
+                </Link> */}
               </div>
             </div>
 
@@ -159,17 +175,26 @@ export default function HomePage() {
           </div>
 
           <div className="mt-16 grid grid-cols-2 gap-4 md:grid-cols-4">
-            {[
-              { label: "Cases analyzed", value: meta.totalCases.toLocaleString("en-IN") },
-              { label: "Demo sample", value: meta.sampledCases.toLocaleString("en-IN") },
-              { label: "Top stations", value: meta.topStations.length.toString() },
-              { label: "Violation classes", value: meta.topViolationTypes.length.toString() },
-            ].map(({ label, value }) => (
-              <div key={label} className="cursor-default rounded-xl border border-slate-800 bg-slate-900/40 p-4 shadow-sm transition-all duration-300 ease-out hover:-translate-y-1 hover:border-amber-500/30 hover:bg-slate-900/60 hover:shadow-md hover:shadow-amber-500/5">
-                <p className="text-2xl font-bold text-amber-400">{value}</p>
-                <p className="mt-1 text-xs text-slate-500">{label}</p>
-              </div>
-            ))}
+            {meta ? (
+              [
+                { label: "Cases analyzed", value: meta.totalCases.toLocaleString("en-IN") },
+                { label: "Top stations", value: meta.topStations.length.toString() },
+                { label: "Violation classes", value: meta.topViolationTypes.length.toString() },
+                { label: "Status tracked", value: "5 types" },
+              ].map(({ label, value }) => (
+                <div key={label} className="cursor-default rounded-xl border border-slate-800 bg-slate-900/40 p-4 shadow-sm transition-all duration-300 ease-out hover:-translate-y-1 hover:border-amber-500/30 hover:bg-slate-900/60 hover:shadow-md hover:shadow-amber-500/5">
+                  <p className="text-2xl font-bold text-amber-400">{value}</p>
+                  <p className="mt-1 text-xs text-slate-500">{label}</p>
+                </div>
+              ))
+            ) : (
+              Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
+                  <div className="h-7 w-20 rounded bg-slate-800 animate-pulse" />
+                  <div className="mt-2 h-3 w-28 rounded bg-slate-800/70 animate-pulse" />
+                </div>
+              ))
+            )}
           </div>
         </div>
       </div>

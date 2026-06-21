@@ -10,3 +10,12 @@ body {
   color: #f8fafc;
   font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
 }
+
+/* Hide TomTom/Mapbox/Leaflet logo and attribution info controls to remove copyright overlay */
+.mapboxgl-ctrl-attrib,
+.maplibre-ctrl-attrib,
+.tt-logo,
+.tt-attribution,
+.leaflet-control-attribution {
+  display: none !important;
+}

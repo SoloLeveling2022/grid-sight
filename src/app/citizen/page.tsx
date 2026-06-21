@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import "../bones/registry";
 import { Skeleton } from "boneyard-js/react";
 import { AlertCircle, Car, MapPin, Navigation, Search, Send, ShieldAlert } from "lucide-react";
@@ -10,25 +11,60 @@ import { VoiceAgent } from "@/components/voice/voice-agent";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { useCitizenStore, useVoiceStore } from "@/store";
-import { getEnforcementPriorities, getJunctionHotspots, getViolationMeta, toMapHotspots } from "@/data/violations";
+import { useCitizenStore, useVoiceStore, useViolationPoliceStore } from "@/store";
+import { toMapHotspots } from "@/data/violations";
 
 export default function CitizenPage() {
+  const router = useRouter();
   const [isLoading, setIsLoading] = useState(true);
   const [fromArea, setFromArea] = useState("Koramangala");
   const [toArea, setToArea] = useState("MG Road");
   const [reportText, setReportText] = useState("");
 
-  useEffect(() => {
-    useVoiceStore.getState().setPersona("citizen");
-    const timer = setTimeout(() => setIsLoading(false), 800);
-    return () => clearTimeout(timer);
-  }, []);
+  const {
+    junctions,
+    enforcementPriorities,
+    fetchHotspots,
+    fetchPriorities,
+  } = useViolationPoliceStore();
 
-  const meta = getViolationMeta();
-  const hotspots = getJunctionHotspots(12);
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const sessionStr = localStorage.getItem("gridsight_session");
+      if (!sessionStr) {
+        router.push("/auth?redirect=/citizen");
+        return;
+      }
+      try {
+        const session = JSON.parse(sessionStr);
+        const now = Date.now();
+        if (now - session.createdAt >= 6 * 60 * 60 * 1000) {
+          localStorage.removeItem("gridsight_session");
+          router.push("/auth?redirect=/citizen");
+          return;
+        }
+      } catch (e) {
+        localStorage.removeItem("gridsight_session");
+        router.push("/auth?redirect=/citizen");
+        return;
+      }
+
+      useVoiceStore.getState().setPersona("citizen");
+      
+      // Fetch live hotspots and priorities from backend
+      Promise.all([
+        fetchHotspots(),
+        fetchPriorities()
+      ]).finally(() => {
+        setIsLoading(false);
+      });
+    }
+  }, [router, fetchHotspots, fetchPriorities]);
+
+  const meta = useViolationPoliceStore((s) => s.meta);
+  const hotspots = junctions;
   const mapHotspots = toMapHotspots(hotspots);
-  const priorities = getEnforcementPriorities(8);
+  const priorities = enforcementPriorities;
 
   const {
     alternateRoute,
@@ -53,7 +89,8 @@ export default function CitizenPage() {
       <div className="mb-4 rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
         <h2 className="text-lg font-semibold text-emerald-100">Traffic safety & parking advisories</h2>
         <p className="mt-1 text-sm text-slate-400">
-          Stay informed about parking-sensitive routes. Based on anonymized enforcement data from {meta.totalCases.toLocaleString("en-IN")} Bengaluru traffic incidents.
+          Stay informed about parking-sensitive routes. Based on anonymized enforcement data from{" "}
+          {meta ? meta.totalCases.toLocaleString("en-IN") : "298,450"} Bengaluru traffic incidents.
         </p>
       </div>
 

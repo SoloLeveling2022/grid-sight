@@ -45,6 +45,23 @@ export interface Hotspot {
   topCauses: string[];
   severity: Severity;
   zone: string | null;
+  dominantViolationType?: string;
+  peakHours?: string;
+  repeatFrequency?: number;
+  nearbySensitivePlaces?: string[];
+  estimatedSpeedDrop?: number;
+  expectedDelayMinutes?: number;
+  congestionScore?: number;
+  affectedRoad?: string;
+  confidence?: number;
+  evidenceSource?: string;
+  weight?: number;
+  uniqueVehicles?: number;
+  caseClosed?: boolean;
+  patrolDispatched?: boolean;
+  actionTaken?: boolean;
+  expectedDelayReduction?: number;
+  scoreReduced?: number;
 }
 
 export interface JunctionHotspot {
@@ -248,6 +265,7 @@ export interface ViolationCase {
   createdBy: string;
   centerCode: string;
   description: string | null;
+  evidenceImageUrl?: string | null;
 }
 
 export interface ViolationDatasetMeta {
@@ -288,6 +306,22 @@ export interface JunctionViolationHotspot {
   latitude: number;
   longitude: number;
   enforcementPriority: Severity;
+  dominantViolationType?: string;
+  peakHours?: string;
+  repeatFrequency?: number;
+  nearbySensitivePlaces?: string[];
+  estimatedSpeedDrop?: number;
+  expectedDelayMinutes?: number;
+  congestionScore?: number;
+  affectedRoad?: string;
+  confidence?: number;
+  evidenceSource?: string;
+  patrolDispatched?: boolean;
+  actionTaken?: boolean;
+  caseClosed?: boolean;
+  expectedDelayReduction?: number;
+  scoreReduced?: number;
+  cameraZonePolygon?: [number, number][];
 }
 
 export interface StationSummary {
@@ -321,6 +355,23 @@ export interface EnforcementPriorityItem {
   repeatOffenderCount: number;
   sensitiveZoneFlags: string[];
   suggestedAction: "monitor" | "patrol" | "tow" | "camera";
+  latitude: number;
+  longitude: number;
+  dominantViolationType?: string;
+  peakHours?: string;
+  repeatFrequency?: number;
+  nearbySensitivePlaces?: string[];
+  estimatedSpeedDrop?: number;
+  expectedDelayMinutes?: number;
+  congestionScore?: number;
+  affectedRoad?: string;
+  confidence?: number;
+  evidenceSource?: string;
+  patrolDispatched?: boolean;
+  actionTaken?: boolean;
+  caseClosed?: boolean;
+  expectedDelayReduction?: number;
+  scoreReduced?: number;
 }
 
 export * from "./map";

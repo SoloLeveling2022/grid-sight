@@ -1,19 +1,19 @@
 import type { Incident } from "@/types";
 
-export type TomTomCoordinate = [number, number]; // [longitude, latitude]
+export type MapplsCoordinate = [number, number]; // [longitude, latitude]
 
-export type TomTomMapOptions = {
+export type MapplsMapOptions = {
   key: string;
   container: string | HTMLElement;
-  center?: TomTomCoordinate;
+  center?: MapplsCoordinate;
   zoom?: number;
   interactive?: boolean;
   [key: string]: unknown;
 };
 
-export type TomTomMapInstance = {
+export type MapplsMapInstance = {
   remove?: () => void;
-  setCenter?: (center: TomTomCoordinate) => void;
+  setCenter?: (center: MapplsCoordinate) => void;
   setZoom?: (zoom: number) => void;
   addControl?: (control: unknown) => void;
   on?: (event: string, handler: (...args: unknown[]) => void) => void;
@@ -31,11 +31,11 @@ export type TomTomMapInstance = {
   hideTrafficIncidents?: () => void;
 };
 
-export type TomTomGlobal = {
-  map: (options: TomTomMapOptions) => TomTomMapInstance;
+export type MapplsGlobal = {
+  map: (options: MapplsMapOptions) => MapplsMapInstance;
   Marker: new (options?: { element?: HTMLElement }) => {
-    setLngLat: (coords: TomTomCoordinate) => any;
-    addTo: (map: TomTomMapInstance) => any;
+    setLngLat: (coords: MapplsCoordinate) => any;
+    addTo: (map: MapplsMapInstance) => any;
     remove: () => void;
   };
   TrafficFlowTilesTier?: new (options: { key: string; style?: string; refresh?: number }) => any;
@@ -44,14 +44,16 @@ export type TomTomGlobal = {
 
 declare global {
   interface Window {
-    tt?: TomTomGlobal;
+    tt?: MapplsGlobal; // tt is kept as tt because the under-the-hood TomTom SDK injects window.tt
   }
 }
 
-const TOMTOM_SCRIPT_ID = "tomtom-maps-sdk-js";
-const TOMTOM_CSS_ID = "tomtom-maps-sdk-css";
+const MAPPLS_SCRIPT_ID = "mappls-maps-sdk-js";
+const MAPPLS_CSS_ID = "mappls-maps-sdk-css";
 
-export function loadTomTomSdk(): Promise<TomTomGlobal | null> {
+const API_MAPPLS = process.env.NEXT_PUBLIC_API_MAPPLS?.trim() || "https://api.tomtom.com";
+
+export function loadMapplsSdk(): Promise<MapplsGlobal | null> {
   if (typeof window === "undefined") {
     return Promise.resolve(null);
   }
@@ -63,17 +65,17 @@ export function loadTomTomSdk(): Promise<TomTomGlobal | null> {
 
   return new Promise((resolve) => {
     // 1. Load CSS
-    if (!document.getElementById(TOMTOM_CSS_ID)) {
+    if (!document.getElementById(MAPPLS_CSS_ID)) {
       const link = document.createElement("link");
-      link.id = TOMTOM_CSS_ID;
+      link.id = MAPPLS_CSS_ID;
       link.rel = "stylesheet";
       link.type = "text/css";
-      link.href = "https://api.tomtom.com/maps-sdk-for-web/cdn/6.x/6.25.0/maps/maps.css";
+      link.href = `${API_MAPPLS}/maps-sdk-for-web/cdn/6.x/6.25.0/maps/maps.css`;
       document.head.appendChild(link);
     }
 
     // 2. Load JS Script
-    const existingScript = document.getElementById(TOMTOM_SCRIPT_ID) as HTMLScriptElement | null;
+    const existingScript = document.getElementById(MAPPLS_SCRIPT_ID) as HTMLScriptElement | null;
     const finish = () => {
       if (window.tt?.map) {
         resolve(window.tt);
@@ -83,7 +85,6 @@ export function loadTomTomSdk(): Promise<TomTomGlobal | null> {
     };
 
     if (existingScript) {
-      // Script tag exists — check if it already finished loading
       if (
         (existingScript as any).readyState === "complete" ||
         existingScript.dataset.loaded === "true"
@@ -91,15 +92,14 @@ export function loadTomTomSdk(): Promise<TomTomGlobal | null> {
         finish();
         return;
       }
-      // Still loading — wait for it
       existingScript.addEventListener("load", finish, { once: true });
       existingScript.addEventListener("error", () => resolve(null), { once: true });
       return;
     }
 
     const script = document.createElement("script");
-    script.id = TOMTOM_SCRIPT_ID;
-    script.src = "https://api.tomtom.com/maps-sdk-for-web/cdn/6.x/6.25.0/maps/maps-web.min.js";
+    script.id = MAPPLS_SCRIPT_ID;
+    script.src = `${API_MAPPLS}/maps-sdk-for-web/cdn/6.x/6.25.0/maps/maps-web.min.js`;
     script.async = true;
     script.defer = true;
     script.onload = () => {
@@ -145,17 +145,17 @@ const mapMagnitudeToPriority = (magnitude: number): "High" | "Low" => {
   return magnitude >= 2 ? "High" : "Low";
 };
 
-export async function fetchLiveTomTomIncidents(key: string): Promise<Incident[]> {
+export async function fetchLiveMapplsIncidents(key: string): Promise<Incident[]> {
   if (!key) return [];
   // Bounding box for Bengaluru region
   const bbox = "77.3,12.8,77.9,13.2";
   const fields = `{incidents{type,geometry{type,coordinates},properties{id,iconCategory,magnitudeOfDelay,events{description,code},startTime,endTime,delay,roadNumbers}}}`;
-  const url = `https://api.tomtom.com/traffic/services/5/incidentDetails?key=${key}&bbox=${bbox}&language=en-GB&fields=${encodeURIComponent(fields)}`;
+  const url = `${API_MAPPLS}/traffic/services/5/incidentDetails?key=${key}&bbox=${bbox}&language=en-GB&fields=${encodeURIComponent(fields)}`;
   
   try {
     const res = await fetch(url);
     if (!res.ok) {
-      throw new Error(`TomTom Traffic API returned status ${res.status}`);
+      throw new Error(`Mappls Traffic API returned status ${res.status}`);
     }
     const data = await res.json();
     if (!data.incidents || !Array.isArray(data.incidents)) {
@@ -191,20 +191,18 @@ export async function fetchLiveTomTomIncidents(key: string): Promise<Incident[]>
       const cause = mapCategoryToCause(props.iconCategory);
       const severity = mapMagnitudeToSeverity(props.magnitudeOfDelay);
       
-      // Calculate an impact score based on magnitude and delay
       let baseImpact = 0.2 + (props.magnitudeOfDelay || 0) * 0.18;
       if (props.delay) {
         baseImpact += Math.min(0.2, props.delay / 1800);
       }
       const impactScore = Math.min(0.95, Math.max(0.1, baseImpact));
 
-      // Construct descriptive text from event descriptions
       const desc = props.events && props.events.length > 0
         ? props.events.map((e: any) => e.description).join(". ")
         : `Traffic incident causing delay on ${roadName}`;
 
       return {
-        id: props.id || `tomtom-live-${Date.now()}-${index}`,
+        id: props.id || `mappls-live-${Date.now()}-${index}`,
         eventType: props.iconCategory === 3 || props.iconCategory === 9 ? "planned" : "unplanned",
         latitude: lat,
         longitude: lng,
@@ -229,7 +227,7 @@ export async function fetchLiveTomTomIncidents(key: string): Promise<Incident[]>
       };
     });
   } catch (error) {
-    console.error("Failed to fetch live TomTom incidents:", error);
+    console.error("Failed to fetch live Mappls incidents:", error);
     return [];
   }
 }
@@ -243,13 +241,13 @@ export interface FlowSegmentData {
   confidence: number;
 }
 
-export async function fetchTomTomFlowSegment(
+export async function fetchMapplsFlowSegment(
   lat: number,
   lng: number,
   key: string
 ): Promise<FlowSegmentData | null> {
   if (!key) return null;
-  const url = `https://api.tomtom.com/traffic/services/4/flowSegmentData/absolute/10/json?key=${key}&point=${lat},${lng}`;
+  const url = `${API_MAPPLS}/traffic/services/4/flowSegmentData/absolute/10/json?key=${key}&point=${lat},${lng}`;
   
   try {
     const res = await fetch(url);
@@ -270,7 +268,7 @@ export async function fetchTomTomFlowSegment(
       confidence: flow.confidence
     };
   } catch (error) {
-    console.error("Failed to fetch TomTom flow segment:", error);
+    console.error("Failed to fetch Mappls flow segment:", error);
     return null;
   }
 }

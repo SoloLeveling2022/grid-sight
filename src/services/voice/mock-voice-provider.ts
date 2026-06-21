@@ -22,15 +22,26 @@ const sessions = new Map<string, VoiceSession>();
 function parseIntent(transcript: string, persona: "police" | "citizen"): string {
   const t = transcript.toLowerCase();
   if (persona === "police") {
+    if (t.includes("patrol") && t.includes("route")) return "generate_patrol_route";
+    if (t.includes("latest") && (t.includes("violation") || t.includes("case"))) return "latest_violations";
+    if (t.includes("top") && t.includes("hotspot")) return "top_hotspots";
+    if (t.includes("pending") && t.includes("case")) return "pending_cases";
+    if (t.includes("approve") && t.includes("case")) return "approve_case";
+    if (t.includes("reject") && t.includes("case")) return "reject_case";
+    if (t.includes("congestion") && t.includes("impact")) return "show_congestion_impact";
     if (t.includes("hotspot") || t.includes("congestion")) return "show_hotspots";
     if (t.includes("worsen") || t.includes("next 30")) return "predict_worsening";
     if (t.includes("enforcement") || t.includes("priority")) return "enforcement_priority";
     if (t.includes("mark") && t.includes("active")) return "mark_incident_active";
     if (t.includes("corridor")) return "filter_corridor";
   } else {
+    if (t.includes("route from koramangala") || t.includes("mg road")) return "citizen_route";
+    if (t.includes("less traffic") || (t.includes("traffic") && t.includes("route"))) return "less_traffic_route";
+    if (t.includes("avoid") && t.includes("hotspot")) return "avoid_hotspots_route";
+    if (t.includes("parking") && t.includes("available")) return "parking_available_route";
+    if (t.includes("report") || t.includes("obstruction")) return "report_obstruction";
     if (t.includes("blocked") || t.includes("block")) return "check_road_blocked";
     if (t.includes("alternate") || t.includes("route")) return "alternate_route";
-    if (t.includes("report") || t.includes("obstruction")) return "report_obstruction";
     if (t.includes("congestion") || t.includes("traffic")) return "area_congestion";
   }
   return "general_query";
@@ -42,6 +53,45 @@ function policeResponse(intent: string, transcript: string, ctx?: VoiceCommandRe
   let toolCalls: VoiceCommandResponse["toolCalls"] = [];
 
   switch (intent) {
+    case "generate_patrol_route": {
+      spoken = "Generating patrol route for the top five enforcement hotspots.";
+      uiActions.push({ type: "generate_patrol_route", payload: { limit: 5 } });
+      toolCalls = [{ name: "get_patrol_route", arguments: { limit: 5 } }];
+      break;
+    }
+    case "latest_violations": {
+      spoken = "Fetching the latest twenty violation cases from the database.";
+      uiActions.push({ type: "latest_violations", payload: {} });
+      toolCalls = [{ name: "search_violations", arguments: { limit: 20 } }];
+      break;
+    }
+    case "top_hotspots": {
+      spoken = "Showing all major parking violation hotspots on the control map.";
+      uiActions.push({ type: "top_hotspots", payload: {} });
+      toolCalls = [{ name: "get_hotspots", arguments: {} }];
+      break;
+    }
+    case "pending_cases": {
+      spoken = "Filtering database for cases in the pending validation queue.";
+      uiActions.push({ type: "pending_cases", payload: {} });
+      toolCalls = [{ name: "search_violations", arguments: { validation_status: "pending" } }];
+      break;
+    }
+    case "approve_case": {
+      spoken = "Processing case validation and marking it approved.";
+      uiActions.push({ type: "approve_case", payload: {} });
+      break;
+    }
+    case "reject_case": {
+      spoken = "Rejecting case evidence and updating record in database.";
+      uiActions.push({ type: "reject_case", payload: {} });
+      break;
+    }
+    case "show_congestion_impact": {
+      spoken = "Opening Random Forest traffic flow impact predictions for this centroid.";
+      uiActions.push({ type: "show_congestion_impact", payload: {} });
+      break;
+    }
     case "show_hotspots": {
       const hotspots = getHotspots(5);
       spoken = `Top five congestion hotspots: ${hotspots.map((h, i) => `${i + 1}. ${h.name} with score ${Math.round(h.hotspotScore * 100)}`).join(". ")}.`;
@@ -97,6 +147,35 @@ function citizenResponse(intent: string, transcript: string, ctx?: VoiceCommandR
   const toolCalls: VoiceCommandResponse["toolCalls"] = [];
 
   switch (intent) {
+    case "citizen_route": {
+      spoken = "Calculating recommended public route from Koramangala to MG Road.";
+      uiActions.push({
+        type: "show_alternate_route",
+        payload: { from: "Koramangala", to: "MG Road", via: "Richmond Road Corridor" },
+      });
+      break;
+    }
+    case "less_traffic_route": {
+      spoken = "Finding route options optimized for minimal travel delays.";
+      uiActions.push({
+        type: "show_alternate_route",
+        payload: { from: "Origin", to: "Destination", via: "Outer Ring Bypass" },
+      });
+      break;
+    }
+    case "avoid_hotspots_route": {
+      spoken = "Route generated avoiding top parking congestion hotspots.";
+      uiActions.push({ type: "avoid_hotspots_route", payload: {} });
+      break;
+    }
+    case "parking_available_route": {
+      spoken = "Finding route aligned with nearest public parking stations.";
+      uiActions.push({
+        type: "show_alternate_route",
+        payload: { from: "Origin", to: "Destination", via: "Public Parking Terminal Route" },
+      });
+      break;
+    }
     case "check_road_blocked": {
       const lat = ctx?.latitude ?? 12.9716;
       const lon = ctx?.longitude ?? 77.5946;

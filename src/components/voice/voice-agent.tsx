@@ -6,19 +6,25 @@ import { Mic, MicOff, X, Volume2, Phone, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useVoiceStore } from "@/store";
-import { usePoliceStore, useCitizenStore } from "@/store";
+import { usePoliceStore, useCitizenStore, useViolationPoliceStore } from "@/store";
 import type { VoicePersona } from "@/types/voice";
 
 const POLICE_PROMPTS = [
-  "Show top five congestion hotspots near the metro zone.",
-  "What roads are expected to worsen in the next 30 minutes?",
-  "Generate enforcement priority for this corridor.",
+  "Generate patrol route",
+  "Show latest violations",
+  "Show top hotspots",
+  "Show pending cases",
+  "Approve this case",
+  "Reject this case",
+  "Show congestion impact here",
 ];
 
 const CITIZEN_PROMPTS = [
-  "Is this road blocked?",
-  "What is the fastest alternate route?",
-  "Report roadside obstruction at my location.",
+  "Find route from Koramangala to MG Road",
+  "Show less traffic route",
+  "Avoid parking hotspots",
+  "Find parking available route",
+  "Report obstruction",
 ];
 
 interface VoiceAgentProps {
@@ -96,6 +102,37 @@ export function VoiceAgent({ persona }: VoiceAgentProps) {
         }
         if (action.type === "report_obstruction") {
           addReport("Voice-reported roadside obstruction");
+        }
+        if (action.type === "generate_patrol_route") {
+          useViolationPoliceStore.getState().fetchPatrolRoute(Number(action.payload.limit || 5));
+        }
+        if (action.type === "latest_violations") {
+          useViolationPoliceStore.getState().fetchCases({ limit: 20 });
+        }
+        if (action.type === "top_hotspots") {
+          useViolationPoliceStore.getState().fetchHotspots();
+        }
+        if (action.type === "pending_cases") {
+          useViolationPoliceStore.getState().fetchCases({ status: "pending" });
+        }
+        if (action.type === "approve_case") {
+          const selectedId = useViolationPoliceStore.getState().selectedCaseId;
+          if (selectedId) {
+            useViolationPoliceStore.getState().approveCase(selectedId);
+          }
+        }
+        if (action.type === "reject_case") {
+          const selectedId = useViolationPoliceStore.getState().selectedCaseId;
+          if (selectedId) {
+            useViolationPoliceStore.getState().rejectCase(selectedId);
+          }
+        }
+        if (action.type === "avoid_hotspots_route") {
+          setAlternateRoute({
+            from: "Koramangala",
+            to: "MG Road",
+            via: "Inner Ring Road (Avoids Hotspots)",
+          });
         }
       }
     } finally {

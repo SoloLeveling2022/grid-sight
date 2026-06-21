@@ -1,69 +1,56 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import { coordToPercent } from "@/services/map/mock-map-provider";
-import { loadTomTomSdk } from "@/services/map/tomtom-sdk";
+import { loadMapplsSdk } from "@/services/map/mappls-sdk";
 import { cn, severityColor } from "@/lib/utils";
 import type { Hotspot, Incident, JunctionHotspot } from "@/types";
-import { motion } from "framer-motion";
-import { AlertTriangle } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { AlertTriangle, X } from "lucide-react";
+import { useViolationPoliceStore } from "@/store";
 
-const tomtomApiKey = process.env.NEXT_PUBLIC_TOMTOM_API_KEY?.trim() ?? "";
+const mapplsApiKey = process.env.NEXT_PUBLIC_MAPPLS_API_KEY?.trim() ?? "";
+const API_MAPPLS = process.env.NEXT_PUBLIC_API_MAPPLS?.trim() ?? "https://api.tomtom.com";
 const MAP_ZOOM_DEFAULT = 12;
 
-// TomTom Map Display API — versioned style JSON URLs
-// Latest available versions: https://api.tomtom.com/map/1/style/metadata.json
-const TOMTOM_STYLE_VERSION = "24.0.0-8";
+// Mappls Map Display API — versioned style JSON URLs
+const MAPPLS_STYLE_VERSION = "24.0.0-8";
 
-/** Returns the correct initial map style based on India Standard Time (UTC+5:30). */
-function getISTStyle(): "night" | "day" {
+function getISTStyle(): "night" | "day" | "satellite" {
   const nowUtcMs = Date.now();
   const istOffsetMs = 5.5 * 60 * 60 * 1000; // IST = UTC + 5h30m
   const istHour = new Date(nowUtcMs + istOffsetMs).getUTCHours();
-  // Day: 06:00 – 18:59 IST  |  Night: 19:00 – 05:59 IST
   return istHour >= 6 && istHour < 19 ? "day" : "night";
 }
 
-/** Builds the TomTom Map Display API style JSON URL for a given style key. */
 function buildStyleUrl(style: "night" | "day" | "satellite", apiKey: string): string {
-  const base = `https://api.tomtom.com/map/1/style/${TOMTOM_STYLE_VERSION}`;
+  const base = `${API_MAPPLS}/map/1/style/${MAPPLS_STYLE_VERSION}`;
   if (style === "day")       return `${base}/basic_main.json?key=${apiKey}`;
   if (style === "satellite") return `${base}/hybrid_main.json?key=${apiKey}`;
   return `${base}/basic_night.json?key=${apiKey}`;
 }
 
-/**
- * Adds TomTom live traffic flow and incident raster tile layers to the map.
- * Safe to call repeatedly — removes stale layers/sources before re-adding.
- *
- * Traffic Flow tiles:  https://developer.tomtom.com/traffic-api/documentation/tomtom-maps/v1/traffic-flow/raster-flow-tiles
- * Traffic Incident tiles: https://developer.tomtom.com/traffic-api/documentation/tomtom-maps/v1/traffic-incidents/raster-incident-tiles
- */
 function addTrafficLayers(map: any, apiKey: string) {
   if (!map || !apiKey) return;
 
-  const FLOW_SOURCE   = "tt-traffic-flow-source";
-  const FLOW_LAYER    = "tt-traffic-flow-layer";
-  const INC_SOURCE    = "tt-traffic-inc-source";
-  const INC_LAYER     = "tt-traffic-inc-layer";
+  const FLOW_SOURCE   = "mappls-traffic-flow-source";
+  const FLOW_LAYER    = "mappls-traffic-flow-layer";
+  const INC_SOURCE    = "mappls-traffic-inc-source";
+  const INC_LAYER     = "mappls-traffic-inc-layer";
 
-  // ── Remove any stale layers / sources from a previous style load ────────
   try { if (map.getLayer(FLOW_LAYER))  map.removeLayer(FLOW_LAYER);  } catch (_) {}
   try { if (map.getLayer(INC_LAYER))   map.removeLayer(INC_LAYER);   } catch (_) {}
   try { if (map.getSource(FLOW_SOURCE)) map.removeSource(FLOW_SOURCE); } catch (_) {}
   try { if (map.getSource(INC_SOURCE))  map.removeSource(INC_SOURCE);  } catch (_) {}
 
-  // ── Traffic Flow raster tiles (relative speed — green/yellow/red routes) ─
-  // Style "relative0" colours roads by congestion relative to free-flow speed.
-  // Docs: /traffic-flow/raster-flow-tiles  version=4, style=relative0
   try {
     map.addSource(FLOW_SOURCE, {
       type: "raster",
       tiles: [
-        `https://api.tomtom.com/traffic/map/4/tile/flow/relative0/{z}/{x}/{y}.png?key=${apiKey}`,
+        `${API_MAPPLS}/traffic/map/4/tile/flow/relative0/{z}/{x}/{y}.png?key=${apiKey}`,
       ],
       tileSize: 256,
-      attribution: "© TomTom live traffic",
+      attribution: "© Mappls live traffic",
     });
     map.addLayer({
       id: FLOW_LAYER,
@@ -75,14 +62,11 @@ function addTrafficLayers(map: any, apiKey: string) {
     console.error("Failed to add traffic flow layer:", err);
   }
 
-  // ── Traffic Incident raster tiles (accidents, closures, etc.) ────────────
-  // Style "s3" shows incident icons on top of the road network.
-  // Docs: /traffic-incidents/raster-incident-tiles  version=4, style=s3
   try {
     map.addSource(INC_SOURCE, {
       type: "raster",
       tiles: [
-        `https://api.tomtom.com/traffic/map/4/tile/incidents/s3/{z}/{x}/{y}.png?key=${apiKey}`,
+        `${API_MAPPLS}/traffic/map/4/tile/incidents/s3/{z}/{x}/{y}.png?key=${apiKey}`,
       ],
       tileSize: 256,
     });
@@ -97,6 +81,12 @@ function addTrafficLayers(map: any, apiKey: string) {
   }
 }
 
+function getImpactColor(delay: number = 0): string {
+  if (delay >= 30) return "#ef4444"; // red
+  if (delay >= 15) return "#f59e0b"; // amber
+  return "#10b981"; // green
+}
+
 interface GridSightMapProps {
   incidents?: Incident[];
   hotspots?: Hotspot[];
@@ -108,9 +98,14 @@ interface GridSightMapProps {
   selectedId?: string | null;
   selectedCorridor?: string | null;
   alternateRoute?: { from: string; to: string; via: string } | null;
+  patrolRoute?: { coordinates: { lat: number; lng: number }[]; waypoints: any[] } | null;
   onSelectIncident?: (incident: Incident) => void;
   onSelectHotspot?: (hotspot: Hotspot) => void;
+  onSelectJunction?: (junction: JunctionHotspot) => void;
   className?: string;
+  filterTimeOfDay?: string | null;
+  filterStation?: string | null;
+  filterViolationType?: string | null;
 }
 
 export function GridSightMap({
@@ -124,23 +119,90 @@ export function GridSightMap({
   selectedId,
   selectedCorridor,
   alternateRoute,
+  patrolRoute = null,
   onSelectIncident,
   onSelectHotspot,
+  onSelectJunction,
   className,
+  filterTimeOfDay,
+  filterStation,
+  filterViolationType,
 }: GridSightMapProps) {
   const [useOfflineFallback, setUseOfflineFallback] = useState(false);
-  const liveMapEnabled = Boolean(tomtomApiKey) && !useOfflineFallback;
+  const liveMapEnabled = Boolean(mapplsApiKey) && !useOfflineFallback;
+
+  // Camera Zone Drawing Store Selectors & Local State
+  const { drawingJunction, cameraZones, setCameraZone, setDrawingJunction } = useViolationPoliceStore();
+  const [drawnPoints, setDrawnPoints] = useState<[number, number][]>([]);
+
+  const drawingJunctionRef = useRef<string | null>(null);
+  const drawnPointsRef = useRef<[number, number][]>([]);
+
+  useEffect(() => {
+    drawingJunctionRef.current = drawingJunction;
+  }, [drawingJunction]);
+
+  useEffect(() => {
+    drawnPointsRef.current = drawnPoints;
+  }, [drawnPoints]);
+
+  function percentToCoord(left: number, top: number) {
+    const north = 13.06;
+    const south = 12.83;
+    const west = 77.46;
+    const east = 77.72;
+    return {
+      latitude: north - (top / 100) * (north - south),
+      longitude: west + (left / 100) * (east - west),
+    };
+  }
+
+  const handleFallbackClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!drawingJunction) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const left = ((e.clientX - rect.left) / rect.width) * 100;
+    const top = ((e.clientY - rect.top) / rect.height) * 100;
+    const coord = percentToCoord(left, top);
+    setDrawnPoints(prev => [...prev, [coord.latitude, coord.longitude]]);
+  };
+
   const [currentStyle, setCurrentStyle] = useState<"night" | "day" | "satellite">(getISTStyle());
-  
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<any>(null);
   const activeMarkersRef = useRef<any[]>([]);
   const [mapStatus, setMapStatus] = useState<"idle" | "loading" | "ready" | "error">(
     liveMapEnabled ? "loading" : "idle"
   );
+  const [hotspotPopup, setHotspotPopup] = useState<Hotspot | null>(null);
+  const [incidentPopup, setIncidentPopup] = useState<Incident | null>(null);
+  const [junctionPopup, setJunctionPopup] = useState<JunctionHotspot | null>(null);
 
-  // TomTom Map Display API style URL helper (delegates to module-level buildStyleUrl)
-  const getTomTomStyleUrl = (style: "night" | "day" | "satellite") => buildStyleUrl(style, tomtomApiKey);
+  const filteredHotspots = useMemo(() => {
+    return hotspots.filter((hs) => {
+      if (filterStation && hs.corridor && hs.corridor.toLowerCase() !== filterStation.toLowerCase()) {
+        return false;
+      }
+      if (filterViolationType && hs.topCauses) {
+        const matchesType = hs.topCauses.some(c => c.toLowerCase() === filterViolationType.toLowerCase()) || 
+                            hs.dominantViolationType?.toLowerCase() === filterViolationType.toLowerCase();
+        if (!matchesType) return false;
+      }
+      if (filterTimeOfDay) {
+        const peakHrs = hs.peakHours ? hs.peakHours.split(",").map(h => parseInt(h.trim().split(":")[0], 10)) : [9, 18];
+        const matchesTime = peakHrs.some(h => {
+          if (filterTimeOfDay === "morning") return h >= 8 && h <= 11;
+          if (filterTimeOfDay === "midday") return h > 11 && h < 17;
+          if (filterTimeOfDay === "evening") return h >= 17 && h <= 20;
+          if (filterTimeOfDay === "night") return h > 20 || h < 8;
+          return true;
+        });
+        if (!matchesTime) return false;
+      }
+      return true;
+    });
+  }, [hotspots, filterStation, filterViolationType, filterTimeOfDay]);
+
+  const getMapplsStyleUrl = (style: "night" | "day" | "satellite") => buildStyleUrl(style, mapplsApiKey);
 
   const changeMapStyle = (style: "night" | "day" | "satellite") => {
     const map = mapRef.current;
@@ -148,34 +210,27 @@ export function GridSightMap({
 
     setMapStatus("loading");
     setCurrentStyle(style);
-    map.setStyle(getTomTomStyleUrl(style));
+    map.setStyle(getMapplsStyleUrl(style));
 
-    // TomTom SDK v6 (Mapbox-GL based) fires "style.load" when the new style
-    // finishes loading. We use `once` to set status back to ready exactly once.
     const onStyleLoad = () => {
       setMapStatus("ready");
-      // Re-inject traffic layers after style switch (setStyle() wipes all custom layers)
-      addTrafficLayers(mapRef.current, tomtomApiKey);
+      addTrafficLayers(mapRef.current, mapplsApiKey);
     };
 
     if (typeof map.once === "function") {
       map.once("style.load", onStyleLoad);
     }
 
-    // Safety fallback: if style.load never fires (e.g., unsupported SDK version),
-    // resolve ready after 6s so the loader doesn't get stuck forever.
     const safetyTimer = setTimeout(() => {
       setMapStatus((prev) => (prev === "loading" ? "ready" : prev));
     }, 6000);
 
-    // Clean up the safety timer if the style loads normally
     if (typeof map.once === "function") {
       map.once("style.load", () => clearTimeout(safetyTimer));
     }
   };
 
-
-  // 1. Initialize TomTom Map
+  // 1. Initialize Mappls Map
   useEffect(() => {
     if (!liveMapEnabled || !containerRef.current) {
       return;
@@ -183,11 +238,9 @@ export function GridSightMap({
 
     let cancelled = false;
     let mapInstance: any = null;
-
-    // Always start in loading state when effect runs (handles Strict Mode double-invoke)
     setMapStatus("loading");
 
-    loadTomTomSdk()
+    loadMapplsSdk()
       .then((tt) => {
         if (cancelled || !containerRef.current) {
           return;
@@ -199,13 +252,14 @@ export function GridSightMap({
         }
 
         mapInstance = tt.map({
-          key: tomtomApiKey,
+          key: mapplsApiKey,
           container: containerRef.current,
           center: [77.5946, 12.9716], // [longitude, latitude] for Bengaluru
           zoom: MAP_ZOOM_DEFAULT,
           dragPan: true,
           scrollZoom: true,
-          style: buildStyleUrl(currentStyle, tomtomApiKey)
+          style: buildStyleUrl(currentStyle, mapplsApiKey),
+          attributionControl: false // Strip TomTom/Mapbox attribution text
         });
 
         mapRef.current = mapInstance;
@@ -213,8 +267,14 @@ export function GridSightMap({
         mapInstance.on("load", () => {
           if (!cancelled) {
             setMapStatus("ready");
-            // Inject live traffic flow + incident raster tile layers
-            addTrafficLayers(mapInstance, tomtomApiKey);
+            addTrafficLayers(mapInstance, mapplsApiKey);
+          }
+        });
+
+        mapInstance.on("click", (e: any) => {
+          if (drawingJunctionRef.current) {
+            const { lat, lng } = e.lngLat;
+            setDrawnPoints((prev) => [...prev, [lat, lng]]);
           }
         });
 
@@ -223,22 +283,21 @@ export function GridSightMap({
             onStyleChanged: () => {
               if (!cancelled) {
                 setMapStatus("ready");
-                // Re-inject traffic layers (style change wipes all custom layers)
-                addTrafficLayers(mapInstance, tomtomApiKey);
+                addTrafficLayers(mapInstance, mapplsApiKey);
               }
             }
           });
         }
 
         mapInstance.on("error", (e: any) => {
-          console.error("TomTom map initialization failed:", e);
+          console.error("Mappls map initialization failed:", e);
           if (!cancelled) {
             setMapStatus("error");
           }
         });
       })
       .catch((err) => {
-        console.error("TomTom SDK failed to load:", err);
+        console.error("Mappls SDK failed to load:", err);
         if (!cancelled) {
           setMapStatus("error");
         }
@@ -254,82 +313,10 @@ export function GridSightMap({
         }
       }
       mapRef.current = null;
-      // Don't call setMapStatus here — let the next effect invocation set "loading" itself
     };
   }, [liveMapEnabled]);
 
-//   useEffect(() => {
-//   if (!liveMapEnabled || !containerRef.current) {
-//     console.log("Map disabled or container missing");
-//     return;
-//   }
-
-//   let cancelled = false;
-//   let mapInstance: any = null;
-
-//   console.log("Map API Key:", mapmyIndiaApiKey);
-
-//   loadMapplsSdk(mapmyIndiaApiKey)
-//     .then((mappls) => {
-//       console.log("mappls =", mappls);
-//       console.log("window.mappls =", window.mappls);
-//       console.log("container =", containerRef.current);
-
-//       console.log(
-//         "container size:",
-//         containerRef.current?.offsetWidth,
-//         containerRef.current?.offsetHeight
-//       );
-
-//       if (cancelled || !containerRef.current) {
-//         return;
-//       }
-
-//       if (!mappls) {
-//         console.error("Mappls SDK not loaded");
-//         setMapStatus("error");
-//         return;
-//       }
-
-//       try {
-//         containerRef.current.id = "mappls-container";
-
-//         mapInstance = new mappls.Map("mappls-container", {
-//           center: [12.9716, 77.5946],
-//           zoom: MAP_ZOOM_DEFAULT,
-//         });
-
-//         console.log("Map created:", mapInstance);
-
-//         mapRef.current = mapInstance;
-//         setMapStatus("ready");
-//       } catch (err) {
-//         console.error("MAP CREATION ERROR:", err);
-//         setMapStatus("error");
-//       }
-//     })
-//     .catch((err) => {
-//       console.error("SDK LOAD ERROR:", err);
-//       if (!cancelled) {
-//         setMapStatus("error");
-//       }
-//     });
-
-//   return () => {
-//     cancelled = true;
-
-//     try {
-//       mapInstance?.remove?.();
-//     } catch (err) {
-//       console.error("Map cleanup failed:", err);
-//     }
-
-//     mapRef.current = null;
-//     setMapStatus("idle");
-//   };
-// }, [liveMapEnabled]);
-
-  // 2. Synchronize markers, popups, and heatmaps on the TomTom instance
+  // 2. Synchronize markers, popups, and heatmaps on the Mappls instance
   useEffect(() => {
     const map = mapRef.current;
     if (!map || mapStatus !== "ready" || typeof window === "undefined" || !window.tt) {
@@ -339,13 +326,10 @@ export function GridSightMap({
     const tt = window.tt as any;
     let active = true;
 
-    // Clear previous markers and layers
     activeMarkersRef.current.forEach((marker) => {
       try {
         marker.remove?.();
-      } catch (e) {
-        // Safe check
-      }
+      } catch (e) {}
     });
     activeMarkersRef.current = [];
 
@@ -365,7 +349,7 @@ export function GridSightMap({
         el.style.transform = "translate(-50%, -50%)";
 
         const marker = new tt.Marker({ element: el })
-          .setLngLat([lng, lat]) // TomTom LngLat [lng, lat]
+          .setLngLat([lng, lat])
           .addTo(map);
 
         if (onClick) {
@@ -374,7 +358,7 @@ export function GridSightMap({
 
         newMarkers.push(marker);
       } catch (err) {
-        console.error("TomTom Marker addition failed:", err);
+        console.error("Mappls Marker addition failed:", err);
       }
     };
 
@@ -386,14 +370,14 @@ export function GridSightMap({
       dash?: boolean
     ) => {
       try {
-        const tomtomCoords = coords.map((c) => [c.lng, c.lat]);
+        const mapplsCoords = coords.map((c) => [c.lng, c.lat]);
         map.addSource(id, {
           type: "geojson",
           data: {
             type: "Feature",
             geometry: {
               type: "LineString",
-              coordinates: tomtomCoords,
+              coordinates: mapplsCoords,
             },
           },
         });
@@ -420,13 +404,60 @@ export function GridSightMap({
             try {
               if (map.getLayer(id)) map.removeLayer(id);
               if (map.getSource(id)) map.removeSource(id);
-            } catch (e) {
-              console.error("TomTom polyline cleanup error:", e);
-            }
+            } catch (e) {}
           },
         });
       } catch (err) {
-        console.error("TomTom Polyline addition failed:", err);
+        console.error("Mappls Polyline addition failed:", err);
+      }
+    };
+
+    const addPolygonLayer = (id: string, coords: [number, number][], color: string = "#f59e0b") => {
+      try {
+        if (coords.length < 3) return;
+        const closedCoords = [...coords, coords[0]];
+        const mapplsCoords = closedCoords.map((c) => [c[1], c[0]]);
+        
+        map.addSource(id, {
+          type: "geojson",
+          data: {
+            type: "Feature",
+            properties: {},
+            geometry: {
+              type: "Polygon",
+              coordinates: [mapplsCoords],
+            },
+          },
+        });
+        map.addLayer({
+          id: id,
+          type: "fill",
+          source: id,
+          paint: {
+            "fill-color": color,
+            "fill-opacity": 0.15,
+          },
+        });
+        map.addLayer({
+          id: id + "-outline",
+          type: "line",
+          source: id,
+          paint: {
+            "line-color": color,
+            "line-width": 2,
+          },
+        });
+        newMarkers.push({
+          remove: () => {
+            try {
+              if (map.getLayer(id)) map.removeLayer(id);
+              if (map.getLayer(id + "-outline")) map.removeLayer(id + "-outline");
+              if (map.getSource(id)) map.removeSource(id);
+            } catch (_) {}
+          },
+        });
+      } catch (err) {
+        console.error("Mappls Polygon addition failed:", err);
       }
     };
 
@@ -439,15 +470,14 @@ export function GridSightMap({
       dash?: boolean
     ) => {
       try {
-        const url = `https://api.tomtom.com/routing/1/calculateRoute/${fromCoord.lat},${fromCoord.lng}:${toCoord.lat},${toCoord.lng}/json?key=${tomtomApiKey}&traffic=true&travelMode=car`;
+        const url = `${API_MAPPLS}/routing/1/calculateRoute/${fromCoord.lat},${fromCoord.lng}:${toCoord.lat},${toCoord.lng}/json?key=${mapplsApiKey}&traffic=true&travelMode=car`;
         const res = await fetch(url);
-        if (!res.ok) throw new Error("TomTom Routing failed");
-
+        if (!res.ok) throw new Error("Routing failed");
         const data = await res.json();
         if (!active || !mapRef.current) return;
 
         const points = data.routes[0].legs[0].points;
-        const tomtomCoords = points.map((p: any) => [p.longitude, p.latitude]);
+        const mapplsCoords = points.map((p: any) => [p.longitude, p.latitude]);
 
         map.addSource(id, {
           type: "geojson",
@@ -455,7 +485,7 @@ export function GridSightMap({
             type: "Feature",
             geometry: {
               type: "LineString",
-              coordinates: tomtomCoords,
+              coordinates: mapplsCoords,
             },
           },
         });
@@ -483,25 +513,52 @@ export function GridSightMap({
               if (map.getLayer(id)) map.removeLayer(id);
               if (map.getSource(id)) map.removeSource(id);
             } catch (e) {
-              console.error("TomTom polyline cleanup error:", e);
+              console.error("Mappls polyline cleanup error:", e);
             }
           },
         });
       } catch (err) {
-        console.error("TomTom live routing failed, falling back to straight polyline:", err);
+        console.error("Mappls live routing failed, falling back to straight polyline:", err);
         if (active && mapRef.current) {
           addPolyline(id, [fromCoord, toCoord], color, width, dash);
         }
       }
     };
 
+    // Render saved camera zones
+    Object.entries(cameraZones).forEach(([jName, points]) => {
+      if (points && points.length >= 3) {
+        const isSelected = selectedId === jName || drawingJunction === jName;
+        const polyId = `camera-zone-${jName}`;
+        addPolygonLayer(polyId, points, isSelected ? "#3b82f6" : "#f59e0b");
+      }
+    });
+
+    // Render currently drawing points
+    if (drawingJunction && drawnPoints.length >= 1) {
+      drawnPoints.forEach((p, idx) => {
+        const html = `
+          <div class="h-4 w-4 rounded-full bg-blue-500 border border-white shadow-md flex items-center justify-center text-[8px] text-white font-bold pointer-events-none">
+            ${idx + 1}
+          </div>
+        `;
+        createMarker(p[0], p[1], html, 16, 16);
+      });
+
+      if (drawnPoints.length >= 2) {
+        const coords = drawnPoints.map(p => ({ lat: p[0], lng: p[1] }));
+        addPolyline("drawing-zone-line", coords, "#3b82f6", 2, true);
+      }
+    }
+
     // A. Render Heatmap Blur Overlay
     if (showHeatmap) {
-      hotspots.slice(0, 15).forEach((hs) => {
-        const size = 50 + hs.hotspotScore * 90;
-        const color = severityColor(hs.severity);
+      filteredHotspots.slice(0, 25).forEach((hs) => {
+        const weight = hs.incidentCount * (hs.congestionScore ?? 0.5);
+        const size = 60 + Math.min(180, weight * 3);
+        const color = getImpactColor(hs.expectedDelayMinutes);
         const html = `
-          <div class="pointer-events-none blur-2xl" 
+          <div class="pointer-events-none blur-2xl animate-pulse" 
                style="width: ${size}px; height: ${size}px; border-radius: 50%; background: radial-gradient(circle, ${color}44 0%, transparent 70%); transform: translate(-50%, -50%);">
           </div>
         `;
@@ -511,17 +568,27 @@ export function GridSightMap({
 
     // B. Render Hotspots
     if (showHotspots) {
-      hotspots.forEach((hs) => {
+      filteredHotspots.forEach((hs) => {
         const selected = selectedId === hs.id;
-        const size = 16 + hs.hotspotScore * 8;
-        const color = severityColor(hs.severity);
-        const border = selected ? "border: 2.5px solid #ffffff; box-shadow: 0 0 0 2px #f59e0b;" : "border: 2px solid #070b14;";
+        const resolved = hs.caseClosed;
+        const weight = hs.incidentCount * (hs.congestionScore ?? 0.5);
+        const size = 16 + Math.min(14, weight * 0.2);
+        const color = getImpactColor(hs.expectedDelayMinutes);
+        const iconHtml = resolved ? `
+          <div class="flex items-center justify-center text-slate-950 font-bold" style="font-size: 9px; line-height: 1; height: 100%;">✓</div>
+        ` : '';
+        const border = selected ? "border: 2.5px solid #ffffff; box-shadow: 0 0 0 2px #f59e0b;" : (resolved ? "border: 1.5px solid #ffffff;" : "border: 2px solid #070b14;");
+        const opacity = resolved ? "opacity: 0.6; scale: 0.85;" : "";
         const html = `
-          <div style="width: ${size}px; height: ${size}px; background-color: ${color}; border-radius: 50%; ${border} cursor: pointer; transform: translate(-50%, -50%); transition: scale 0.15s; z-index: 1000;" 
-               title="Hotspot: ${hs.name} (Score: ${Math.round(hs.hotspotScore * 100)})">
+          <div style="width: ${size}px; height: ${size}px; background-color: ${color}; border-radius: 50%; ${border} cursor: pointer; transform: translate(-50%, -50%); transition: scale 0.15s; z-index: 1000; ${opacity}" 
+               title="Hotspot: ${hs.name} (Expected delay: ${hs.expectedDelayMinutes?.toFixed(1) || 0} min)">
+            ${iconHtml}
           </div>
         `;
         createMarker(hs.latitude, hs.longitude, html, size, size, () => {
+          setHotspotPopup(hs);
+          setIncidentPopup(null);
+          setJunctionPopup(null);
           onSelectHotspot?.(hs);
         });
       });
@@ -535,7 +602,12 @@ export function GridSightMap({
                title="Junction: ${j.name}">
           </div>
         `;
-        createMarker(j.latitude, j.longitude, html, 10, 10);
+        createMarker(j.latitude, j.longitude, html, 10, 10, () => {
+          setJunctionPopup(j);
+          setHotspotPopup(null);
+          setIncidentPopup(null);
+          onSelectJunction?.(j);
+        });
       });
     }
 
@@ -564,6 +636,9 @@ export function GridSightMap({
           </div>
         `;
         createMarker(inc.latitude, inc.longitude, html, 10, 10, () => {
+          setIncidentPopup(inc);
+          setHotspotPopup(null);
+          setJunctionPopup(null);
           onSelectIncident?.(inc);
         });
       });
@@ -601,6 +676,52 @@ export function GridSightMap({
       }
     }
 
+    // G. Render Police Patrol Route — blue navigation line
+    if (patrolRoute && patrolRoute.coordinates && patrolRoute.coordinates.length >= 2) {
+      // Blue navigation polyline
+      addPolyline("patrol-route-line", patrolRoute.coordinates, "#3b82f6", 5);
+
+      // Navigation arrow marker at start point
+      const startCoord = patrolRoute.coordinates[0];
+      const navHtml = `
+        <div style="
+          width: 36px; height: 36px;
+          display: flex; align-items: center; justify-content: center;
+          background: #1d4ed8;
+          border: 3px solid #93c5fd;
+          border-radius: 50%;
+          box-shadow: 0 0 0 4px rgba(59,130,246,0.35), 0 4px 12px rgba(0,0,0,0.5);
+          transform: translate(-50%, -50%);
+          cursor: pointer;
+          z-index: 1100;
+        ">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
+            <path d="M12 2L4.5 20.29l.71.71L12 18l6.79 3 .71-.71z"/>
+          </svg>
+        </div>
+      `;
+      createMarker(startCoord.lat, startCoord.lng, navHtml, 36, 36);
+
+      // Auto-fit map bounds to patrol route
+      const lats = patrolRoute.coordinates.map(c => c.lat);
+      const lngs = patrolRoute.coordinates.map(c => c.lng);
+      const bounds = [
+        [Math.min(...lngs) - 0.01, Math.min(...lats) - 0.01],
+        [Math.max(...lngs) + 0.01, Math.max(...lats) + 0.01],
+      ];
+      try {
+        if (map.fitBounds) {
+          map.fitBounds(bounds, { padding: 60, duration: 900 });
+        }
+      } catch (e) {
+        // fallback: just center
+        const midLat = (Math.min(...lats) + Math.max(...lats)) / 2;
+        const midLng = (Math.min(...lngs) + Math.max(...lngs)) / 2;
+        map.setCenter?.([midLng, midLat]);
+        map.setZoom?.(12);
+      }
+    }
+
     activeMarkersRef.current = newMarkers;
 
     return () => {
@@ -609,7 +730,7 @@ export function GridSightMap({
   }, [
     mapStatus,
     incidents,
-    hotspots,
+    filteredHotspots,
     junctions,
     showHeatmap,
     showIncidents,
@@ -618,8 +739,10 @@ export function GridSightMap({
     selectedId,
     selectedCorridor,
     alternateRoute,
+    patrolRoute,
     onSelectIncident,
     onSelectHotspot,
+    onSelectJunction,
   ]);
 
   // 3. Pan/Center map on selected incident/hotspot/junction coordinates
@@ -653,6 +776,35 @@ export function GridSightMap({
     }
   }, [selectedId, mapStatus, hotspots, incidents, junctions]);
 
+  // Sync selectedId changes to set the correct active popup
+  useEffect(() => {
+    if (!selectedId) return;
+
+    const hs = hotspots.find((h) => h.id === selectedId);
+    if (hs) {
+      setHotspotPopup(hs);
+      setIncidentPopup(null);
+      setJunctionPopup(null);
+      return;
+    }
+
+    const inc = incidents.find((i) => i.id === selectedId);
+    if (inc) {
+      setIncidentPopup(inc);
+      setHotspotPopup(null);
+      setJunctionPopup(null);
+      return;
+    }
+
+    const junc = junctions.find((j) => j.id === selectedId);
+    if (junc) {
+      setJunctionPopup(junc);
+      setHotspotPopup(null);
+      setIncidentPopup(null);
+      return;
+    }
+  }, [selectedId, hotspots, incidents, junctions]);
+
   return (
     <div
       className={cn(
@@ -660,6 +812,221 @@ export function GridSightMap({
         className
       )}
     >
+      {/* Hotspot detail popup (TomTom live map) */}
+      <AnimatePresence>
+        {hotspotPopup && (
+          <motion.div
+            key="hotspot-popup"
+            initial={{ opacity: 0, y: 8, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 8, scale: 0.95 }}
+            transition={{ duration: 0.18 }}
+            className="absolute top-3 left-3 z-30 w-64 rounded-xl border border-slate-700 bg-slate-950/95 backdrop-blur-md shadow-2xl shadow-black/60 overflow-hidden"
+          >
+            {/* Severity accent bar */}
+            <div
+              className="h-1 w-full"
+              style={{ backgroundColor: getImpactColor(hotspotPopup.expectedDelayMinutes) }}
+            />
+            <div className="p-3">
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-bold text-slate-100 leading-tight truncate">{hotspotPopup.name}</p>
+                  {hotspotPopup.corridor && (
+                    <p className="mt-0.5 text-[10px] text-slate-400 truncate">{hotspotPopup.corridor}</p>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setHotspotPopup(null)}
+                  className="shrink-0 rounded p-0.5 text-slate-500 hover:text-slate-200 hover:bg-slate-800 transition-colors cursor-pointer"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              <div className="mt-2.5 grid grid-cols-2 gap-2">
+                <div className="rounded-lg bg-slate-900 border border-slate-800 p-2">
+                  <p className="text-[9px] uppercase tracking-wider text-slate-500">Expected Delay</p>
+                  <p className="mt-0.5 text-xs font-bold text-slate-100">
+                    {hotspotPopup.expectedDelayMinutes?.toFixed(1) ?? 0} min
+                  </p>
+                </div>
+                <div className="rounded-lg bg-slate-900 border border-slate-800 p-2">
+                  <p className="text-[9px] uppercase tracking-wider text-slate-500">Speed Drop</p>
+                  <p className="mt-0.5 text-xs font-bold text-red-400">-{hotspotPopup.estimatedSpeedDrop?.toFixed(1) ?? 0} km/h</p>
+                </div>
+              </div>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <div className="rounded-lg bg-slate-900 border border-slate-800 p-2">
+                  <p className="text-[9px] uppercase tracking-wider text-slate-500 font-semibold text-slate-400">Unique Vehicles</p>
+                  <p className="mt-0.5 text-xs font-bold text-slate-200">{hotspotPopup.uniqueVehicles ?? hotspotPopup.incidentCount}</p>
+                </div>
+                <div className="rounded-lg bg-slate-900 border border-slate-800 p-2">
+                  <p className="text-[9px] uppercase tracking-wider text-slate-500">Peak Hours</p>
+                  <p className="mt-0.5 text-[10px] font-bold text-slate-200 truncate">{hotspotPopup.peakHours ?? "09:00, 18:00"}</p>
+                </div>
+              </div>
+              
+              <div className="mt-2 rounded-lg bg-slate-900/60 border border-slate-800 p-2 text-[10px] text-slate-300 space-y-1">
+                <p><span className="text-slate-500">Affected Road:</span> {hotspotPopup.affectedRoad ?? hotspotPopup.name}</p>
+                <p><span className="text-slate-500">Evidence:</span> {hotspotPopup.evidenceSource}</p>
+                <p><span className="text-slate-500">Confidence:</span> {Math.round((hotspotPopup.confidence ?? 0.85) * 100)}%</p>
+                {hotspotPopup.nearbySensitivePlaces && hotspotPopup.nearbySensitivePlaces.length > 0 && (
+                  <p><span className="text-slate-500">Sensitive Zones:</span> {hotspotPopup.nearbySensitivePlaces.join(", ")}</p>
+                )}
+              </div>
+
+              {hotspotPopup.caseClosed && (
+                <div className="mt-2 rounded-lg bg-emerald-500/10 border border-emerald-500/25 p-2 text-[10px] text-emerald-400 font-medium animate-pulse">
+                  ✓ Action Completed: expected delay reduced by {hotspotPopup.expectedDelayReduction?.toFixed(1) ?? 0}m
+                </div>
+              )}
+
+              {hotspotPopup.topCauses && hotspotPopup.topCauses.length > 0 && (
+                <div className="mt-2 rounded-lg bg-slate-900 border border-slate-800 p-2">
+                  <p className="text-[9px] uppercase tracking-wider text-slate-500 mb-1">Top Causes</p>
+                  <div className="flex flex-wrap gap-1">
+                    {hotspotPopup.topCauses.slice(0, 3).map((cause) => (
+                      <span key={cause} className="rounded bg-slate-800 border border-slate-700 px-1.5 py-0.5 text-[9px] text-slate-300">{cause}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div className="mt-2 flex items-center justify-between">
+                <p className="text-[9px] text-slate-600 font-mono">
+                  {hotspotPopup.latitude.toFixed(5)}, {hotspotPopup.longitude.toFixed(5)}
+                </p>
+                <p className="text-[9px] text-slate-500">
+                  Recur Freq: <span className="text-amber-400 font-semibold">{Math.round((hotspotPopup.repeatFrequency ?? 0) * 100)}%</span>
+                </p>
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {incidentPopup && (
+          <motion.div
+            key="incident-popup"
+            initial={{ opacity: 0, y: 8, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 8, scale: 0.95 }}
+            transition={{ duration: 0.18 }}
+            className="absolute top-3 left-3 z-30 w-64 rounded-xl border border-slate-700 bg-slate-950/95 backdrop-blur-md shadow-2xl shadow-black/60 overflow-hidden"
+          >
+            {/* Severity accent bar */}
+            <div
+              className="h-1 w-full"
+              style={{ backgroundColor: severityColor(incidentPopup.severity) }}
+            />
+            <div className="p-3">
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-bold text-slate-100 leading-tight truncate">
+                    {incidentPopup.eventCause.replace(/_/g, " ")}
+                  </p>
+                  <p className="mt-0.5 text-[10px] text-slate-400 truncate">{incidentPopup.address}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIncidentPopup(null)}
+                  className="shrink-0 rounded p-0.5 text-slate-500 hover:text-slate-200 hover:bg-slate-800 transition-colors cursor-pointer"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              <div className="mt-2.5 grid grid-cols-2 gap-2">
+                <div className="rounded-lg bg-slate-900 border border-slate-800 p-2">
+                  <p className="text-[9px] uppercase tracking-wider text-slate-500">Status</p>
+                  <p className="mt-0.5 text-xs font-bold capitalize text-amber-400">
+                    {incidentPopup.status}
+                  </p>
+                </div>
+                <div className="rounded-lg bg-slate-900 border border-slate-800 p-2">
+                  <p className="text-[9px] uppercase tracking-wider text-slate-500">Impact Score</p>
+                  <p className="mt-0.5 text-xs font-bold text-slate-100">{Math.round(incidentPopup.impactScore * 100)}%</p>
+                </div>
+              </div>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <div className="rounded-lg bg-slate-900 border border-slate-800 p-2">
+                  <p className="text-[9px] uppercase tracking-wider text-slate-500">Corridor</p>
+                  <p className="mt-0.5 text-xs font-bold text-slate-200 truncate">{incidentPopup.corridor}</p>
+                </div>
+                <div className="rounded-lg bg-slate-900 border border-slate-800 p-2">
+                  <p className="text-[9px] uppercase tracking-wider text-slate-500">Station</p>
+                  <p className="mt-0.5 text-xs font-bold text-slate-200 truncate">{incidentPopup.policeStation}</p>
+                </div>
+              </div>
+              {incidentPopup.description && (
+                <div className="mt-2 rounded-lg bg-slate-900 border border-slate-800 p-2">
+                  <p className="text-[9px] uppercase tracking-wider text-slate-500 mb-1">Description</p>
+                  <p className="text-[10px] text-slate-400 italic leading-snug">{incidentPopup.description}</p>
+                </div>
+              )}
+              <div className="mt-2 flex items-center justify-between">
+                <p className="text-[9px] text-slate-600 font-mono">
+                  {incidentPopup.latitude.toFixed(5)}, {incidentPopup.longitude.toFixed(5)}
+                </p>
+                <p className="text-[9px] text-slate-500">
+                  Priority: <span className="text-amber-400 font-semibold">{incidentPopup.priority}</span>
+                </p>
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {junctionPopup && (
+          <motion.div
+            key="junction-popup"
+            initial={{ opacity: 0, y: 8, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 8, scale: 0.95 }}
+            transition={{ duration: 0.18 }}
+            className="absolute top-3 left-3 z-30 w-64 rounded-xl border border-slate-700 bg-slate-950/95 backdrop-blur-md shadow-2xl shadow-black/60 overflow-hidden"
+          >
+            {/* Severity accent bar */}
+            <div
+              className="h-1 w-full"
+              style={{ backgroundColor: severityColor(junctionPopup.severity) }}
+            />
+            <div className="p-3">
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-bold text-slate-100 leading-tight truncate">{junctionPopup.name}</p>
+                  <p className="mt-0.5 text-[10px] text-slate-400 truncate">{junctionPopup.corridor}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setJunctionPopup(null)}
+                  className="shrink-0 rounded p-0.5 text-slate-500 hover:text-slate-200 hover:bg-slate-800 transition-colors cursor-pointer"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              <div className="mt-2.5 grid grid-cols-2 gap-2">
+                <div className="rounded-lg bg-slate-900 border border-slate-800 p-2">
+                  <p className="text-[9px] uppercase tracking-wider text-slate-500">Risk Severity</p>
+                  <p className="mt-0.5 text-xs font-bold capitalize" style={{ color: severityColor(junctionPopup.severity) }}>
+                    {junctionPopup.severity}
+                  </p>
+                </div>
+                <div className="rounded-lg bg-slate-900 border border-slate-800 p-2">
+                  <p className="text-[9px] uppercase tracking-wider text-slate-500">Intensity Score</p>
+                  <p className="mt-0.5 text-xs font-bold text-slate-100">{Math.round(junctionPopup.hotspotScore * 100)}%</p>
+                </div>
+              </div>
+              <div className="mt-2 rounded-lg bg-slate-950 p-2 border border-slate-850">
+                <span className="text-[9px] text-slate-500 uppercase font-semibold">Intersection Incidents</span>
+                <p className="text-sm font-bold text-cyan-400 mt-0.5">{junctionPopup.incidentCount}</p>
+              </div>
+              <div className="mt-2 flex items-center justify-between">
+                <p className="text-[9px] text-slate-600 font-mono">
+                  {junctionPopup.latitude.toFixed(5)}, {junctionPopup.longitude.toFixed(5)}
+                </p>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
       {/* Live TomTom Element */}
       {liveMapEnabled ? (
         <>
@@ -712,15 +1079,6 @@ export function GridSightMap({
                 ))}
               </div>
             )}
-            {/* {liveMapEnabled && (
-              <button
-                type="button"
-                onClick={() => setUseOfflineFallback(true)}
-                className="rounded-lg bg-slate-950/95 hover:bg-slate-900 hover:text-slate-200 px-2 py-1.5 text-[10px] text-slate-400 border border-slate-800 cursor-pointer transition-colors shadow-xl backdrop-blur-md"
-              >
-                Use Offline Map
-              </button>
-            )} */}
           </div>
         </>
       ) : (
@@ -745,20 +1103,22 @@ export function GridSightMap({
 
           {/* SVG Fallback Heatmap Layer */}
           {showHeatmap &&
-            hotspots.slice(0, 12).map((hs) => {
+            filteredHotspots.slice(0, 15).map((hs) => {
               const pos = coordToPercent(hs);
-              const size = 40 + hs.hotspotScore * 80;
+              const weight = hs.incidentCount * (hs.congestionScore ?? 0.5);
+              const size = 40 + Math.min(100, weight * 2);
+              const color = getImpactColor(hs.expectedDelayMinutes);
               return (
                 <div
                   key={`heat-${hs.id}`}
-                  className="absolute rounded-full pointer-events-none blur-2xl"
+                  className="absolute rounded-full pointer-events-none blur-2xl animate-pulse"
                   style={{
                     left: `${pos.left}%`,
                     top: `${pos.top}%`,
                     width: size,
                     height: size,
                     transform: "translate(-50%, -50%)",
-                    background: `radial-gradient(circle, ${severityColor(hs.severity)}55 0%, transparent 70%)`,
+                    background: `radial-gradient(circle, ${color}44 0%, transparent 70%)`,
                   }}
                 />
               );
@@ -766,9 +1126,13 @@ export function GridSightMap({
 
           {/* SVG Fallback Hotspots */}
           {showHotspots &&
-            hotspots.map((hs) => {
+            filteredHotspots.map((hs) => {
               const pos = coordToPercent(hs);
               const selected = selectedId === hs.id;
+              const resolved = hs.caseClosed;
+              const weight = hs.incidentCount * (hs.congestionScore ?? 0.5);
+              const size = 14 + Math.min(12, weight * 0.15);
+              const color = getImpactColor(hs.expectedDelayMinutes);
               return (
                 <motion.button
                   key={hs.id}
@@ -776,19 +1140,27 @@ export function GridSightMap({
                   initial={{ scale: 0 }}
                   animate={{ scale: selected ? 1.25 : 1 }}
                   className={cn(
-                    "absolute z-20 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 shadow-lg",
-                    selected ? "border-white ring-2 ring-amber-400" : "border-slate-900"
+                    "absolute z-20 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 shadow-lg flex items-center justify-center",
+                    selected ? "border-white ring-2 ring-amber-400" : (resolved ? "border-white/60" : "border-slate-900")
                   )}
                   style={{
                     left: `${pos.left}%`,
                     top: `${pos.top}%`,
-                    width: 14 + hs.hotspotScore * 10,
-                    height: 14 + hs.hotspotScore * 10,
-                    backgroundColor: severityColor(hs.severity),
+                    width: size,
+                    height: size,
+                    backgroundColor: color,
+                    opacity: resolved ? 0.6 : 1,
                   }}
-                  onClick={() => onSelectHotspot?.(hs)}
+                  onClick={() => {
+                    setHotspotPopup(hs);
+                    setIncidentPopup(null);
+                    setJunctionPopup(null);
+                    onSelectHotspot?.(hs);
+                  }}
                   title={hs.name}
-                />
+                >
+                  {resolved && <span className="text-[8px] text-slate-950 font-extrabold leading-none">✓</span>}
+                </motion.button>
               );
             })}
 
@@ -797,10 +1169,17 @@ export function GridSightMap({
             junctions.map((j) => {
               const pos = coordToPercent(j);
               return (
-                <div
+                <button
                   key={j.id}
-                  className="absolute z-10 -translate-x-1/2 -translate-y-1/2 w-2 h-2 rotate-45 bg-cyan-400 border border-slate-900"
+                  type="button"
+                  className="absolute z-10 -translate-x-1/2 -translate-y-1/2 w-2.5 h-2.5 rotate-45 bg-cyan-400 border border-slate-900 cursor-pointer hover:scale-125 transition-transform"
                   style={{ left: `${pos.left}%`, top: `${pos.top}%` }}
+                  onClick={() => {
+                    setJunctionPopup(j);
+                    setHotspotPopup(null);
+                    setIncidentPopup(null);
+                    onSelectJunction?.(j);
+                  }}
                   title={j.name}
                 />
               );
@@ -828,7 +1207,12 @@ export function GridSightMap({
                     height: 8,
                     backgroundColor: severityColor(inc.severity),
                   }}
-                  onClick={() => onSelectIncident?.(inc)}
+                  onClick={() => {
+                    setIncidentPopup(inc);
+                    setHotspotPopup(null);
+                    setJunctionPopup(null);
+                    onSelectIncident?.(inc);
+                  }}
                   title={inc.address}
                 />
               );
@@ -897,8 +1281,157 @@ export function GridSightMap({
             return null;
           })()}
 
+          {/* SVG Fallback Patrol Route — blue navigation line + start marker */}
+          {patrolRoute && patrolRoute.coordinates && patrolRoute.coordinates.length >= 2 && (() => {
+            const points = patrolRoute.coordinates.map(p => coordToPercent({ latitude: p.lat, longitude: p.lng }));
+            const pointsStr = points.map(p => `${p.left}%,${p.top}%`).join(" ");
+            const startPt = points[0];
+            return (
+              <div className="absolute inset-0 z-10">
+                <svg className="w-full h-full pointer-events-none">
+                  {/* Blue glow shadow */}
+                  <polyline
+                    points={pointsStr}
+                    fill="none"
+                    stroke="#93c5fd"
+                    strokeWidth="9"
+                    strokeOpacity="0.25"
+                  />
+                  {/* Blue navigation line */}
+                  <polyline
+                    points={pointsStr}
+                    fill="none"
+                    stroke="#3b82f6"
+                    strokeWidth="4"
+                    strokeOpacity="0.95"
+                  />
+                </svg>
+                {/* Navigation start marker */}
+                <div
+                  className="absolute pointer-events-none"
+                  style={{ left: `${startPt.left}%`, top: `${startPt.top}%`, transform: "translate(-50%, -50%)" }}
+                >
+                  <div className="w-9 h-9 rounded-full bg-blue-700 border-[3px] border-blue-300 shadow-lg shadow-blue-900/60 flex items-center justify-center" style={{ boxShadow: '0 0 0 5px rgba(59,130,246,0.25)' }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="white">
+                      <path d="M12 2L4.5 20.29l.71.71L12 18l6.79 3 .71-.71z"/>
+                    </svg>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* SVG Fallback Camera Zones */}
+          {Object.entries(cameraZones).map(([jName, points]) => {
+            if (!points || points.length < 3) return null;
+            const isSelected = selectedId === jName || drawingJunction === jName;
+            const pointsStr = points.map(p => {
+              const pos = coordToPercent({ latitude: p[0], longitude: p[1] });
+              return `${pos.left}%,${pos.top}%`;
+            }).join(" ");
+            return (
+              <div key={jName} className="absolute inset-0 z-10 pointer-events-none">
+                <svg className="w-full h-full">
+                  <polygon
+                    points={pointsStr}
+                    fill={isSelected ? "#3b82f6" : "#f59e0b"}
+                    fillOpacity={0.15}
+                    stroke={isSelected ? "#3b82f6" : "#f59e0b"}
+                    strokeWidth={2}
+                  />
+                </svg>
+              </div>
+            );
+          })}
+
+          {/* SVG Fallback Drawing Polygon */}
+          {drawingJunction && (
+            <div className="absolute inset-0 z-20">
+              <svg className="w-full h-full pointer-events-none">
+                {drawnPoints.length >= 2 && (
+                  <polyline
+                    points={drawnPoints.map(p => {
+                      const pos = coordToPercent({ latitude: p[0], longitude: p[1] });
+                      return `${pos.left}%,${pos.top}%`;
+                    }).join(" ")}
+                    fill="none"
+                    stroke="#3b82f6"
+                    strokeWidth="2"
+                    strokeDasharray="4 3"
+                  />
+                )}
+              </svg>
+              {drawnPoints.map((p, idx) => {
+                const pos = coordToPercent({ latitude: p[0], longitude: p[1] });
+                return (
+                  <div
+                    key={idx}
+                    className="absolute pointer-events-none h-4 w-4 rounded-full bg-blue-600 border border-white flex items-center justify-center text-[8px] font-bold text-white shadow-lg"
+                    style={{ left: `${pos.left}%`, top: `${pos.top}%`, transform: "translate(-50%, -50%)" }}
+                  >
+                    {idx + 1}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Overlay to capture clicks in fallback mode */}
+          {drawingJunction && (
+            <div
+              className="absolute inset-0 z-20 cursor-crosshair"
+              onClick={handleFallbackClick}
+            />
+          )}
+
+          {/* Drawing floating control panel overlay */}
+          {drawingJunction && (
+            <div className="absolute bottom-4 left-4 z-30 flex flex-col gap-2 rounded-xl border border-amber-500/30 bg-slate-950/95 p-3.5 shadow-2xl backdrop-blur-md max-w-sm">
+              <div className="flex items-center justify-between gap-4 border-b border-slate-800 pb-2">
+                <div>
+                  <p className="text-xs font-semibold text-amber-400">Drawing Camera Zone</p>
+                  <p className="text-[10px] text-slate-400 mt-0.5">{drawingJunction}</p>
+                </div>
+                <button
+                  onClick={() => {
+                    setDrawingJunction(null);
+                    setDrawnPoints([]);
+                  }}
+                  className="text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <p className="text-[10px] text-slate-500 leading-relaxed">
+                Click on the map to define the boundary vertices of the no-parking area. Create at least 3 points to complete the zone shape.
+              </p>
+              <div className="flex gap-2 pt-2 border-t border-slate-900">
+                <button
+                  onClick={() => {
+                    if (drawnPoints.length >= 3) {
+                      setCameraZone(drawingJunction, drawnPoints);
+                      setDrawingJunction(null);
+                      setDrawnPoints([]);
+                    }
+                  }}
+                  disabled={drawnPoints.length < 3}
+                  className="flex-1 rounded bg-amber-500 px-3 py-1.5 text-center text-xs font-bold text-slate-950 hover:bg-amber-400 disabled:opacity-50 disabled:cursor-not-allowed transition-all cursor-pointer"
+                >
+                  Save Zone ({drawnPoints.length})
+                </button>
+                <button
+                  onClick={() => setDrawnPoints([])}
+                  disabled={drawnPoints.length === 0}
+                  className="rounded border border-slate-800 bg-slate-900 px-3 py-1.5 text-xs text-slate-400 hover:bg-slate-800 hover:text-slate-200 disabled:opacity-50 transition-all cursor-pointer"
+                >
+                  Reset
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="absolute top-2 right-2 z-20 flex items-center gap-1.5">
-            {tomtomApiKey && (
+            {mapplsApiKey && (
               <button
                 type="button"
                 onClick={() => setUseOfflineFallback(false)}

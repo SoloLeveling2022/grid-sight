@@ -51,7 +51,15 @@ export interface VoiceUIAction {
     | "show_recommendations"
     | "filter_corridor"
     | "show_alternate_route"
-    | "report_obstruction";
+    | "report_obstruction"
+    | "generate_patrol_route"
+    | "latest_violations"
+    | "top_hotspots"
+    | "pending_cases"
+    | "approve_case"
+    | "reject_case"
+    | "show_congestion_impact"
+    | "avoid_hotspots_route";
   payload: Record<string, unknown>;
 }
 

@@ -35,7 +35,7 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased dark`}
     >
       <body className="min-h-full flex flex-col bg-[#070b14] text-slate-100">
-        <script
+        {/* <script
           dangerouslySetInnerHTML={{
             __html: `
               window.addEventListener('beforeinstallprompt', (e) => {
@@ -45,7 +45,7 @@ export default function RootLayout({
               });
             `,
           }}
-        />
+        /> */}
         <ServiceWorkerRegister />
         {children}
       </body>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
@@ -16,12 +16,18 @@ import {
   ArrowLeftRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { getViolationMeta } from "@/data/violations";
+import { useViolationPoliceStore } from "@/store";
 
 export function AppShell({ children, title }: { children: React.ReactNode; title: string }) {
   const pathname = usePathname();
-  const meta = getViolationMeta();
+  const { meta, fetchMeta } = useViolationPoliceStore();
   const [isExpanded, setIsExpanded] = useState(false);
+
+  useEffect(() => {
+    if (!meta) {
+      fetchMeta();
+    }
+  }, [meta, fetchMeta]);
 
   const isCitizen = pathname.startsWith("/citizen");
 
@@ -110,18 +116,18 @@ export function AppShell({ children, title }: { children: React.ReactNode; title
             {/* Total count badge (hidden on tiny screens) */}
             <span className="hidden sm:flex items-center gap-1.5">
               <Radio className="h-3 w-3 animate-pulse text-emerald-400" />
-              {meta.sampledCases.toLocaleString("en-IN")} loaded
+              {meta ? `${meta.sampledCases.toLocaleString("en-IN")} loaded` : "Loading..."}
             </span>
 
             {/* Mode Switching Button (Switch to Citizen / Switch to Police) */}
-            <Link
+            {/* <Link
               href={isCitizen ? "/police" : "/citizen"}
               className="flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-slate-900 border border-slate-800 text-[10px] text-amber-400 hover:text-amber-300 hover:bg-slate-850 hover:border-amber-500/30 transition-all font-semibold"
             >
               <ArrowLeftRight className="h-3 w-3" />
               <span className="hidden sm:inline">Switch to {isCitizen ? "Police" : "Citizen"}</span>
               <span className="sm:hidden">{isCitizen ? "Police" : "Citizen"}</span>
-            </Link>
+            </Link> */}
 
             <span className="text-slate-600">|</span>
             <span className="text-[10px] sm:text-xs font-semibold text-slate-300 truncate max-w-[80px] sm:max-w-none">{title}</span>
@@ -150,7 +156,7 @@ export function AppShell({ children, title }: { children: React.ReactNode; title
                 {label}
               </Link>
             ))}
-            <div className="border-t border-slate-800/80 my-2 pt-2">
+            {/* <div className="border-t border-slate-800/80 my-2 pt-2">
               <Link
                 href={isCitizen ? "/police" : "/citizen"}
                 onClick={() => setIsExpanded(false)}
@@ -159,7 +165,7 @@ export function AppShell({ children, title }: { children: React.ReactNode; title
                 <ArrowLeftRight className="h-4 w-4" />
                 Switch to {isCitizen ? "Police Control" : "Citizen Portal"}
               </Link>
-            </div>
+            </div> */}
           </div>
         )}
       </header>

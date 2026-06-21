@@ -9,14 +9,8 @@ import { GridSightMap } from "@/components/map/gridsight-map";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  getAllViolations,
-  getViolationMeta,
-  getViolationTypes,
-  getStationList,
-  toMapHotspots,
-  getJunctionHotspots,
-} from "@/data/violations";
+import { useViolationPoliceStore } from "@/store";
+import { toMapHotspots } from "@/data/violations";
 import type { ViolationCase } from "@/types";
 import { cn } from "@/lib/utils";
 
@@ -27,24 +21,52 @@ export default function ViolationsExplorerPage() {
   const [selectedStation, setSelectedStation] = useState("");
   const [selectedJunction, setSelectedJunction] = useState("");
 
-  useEffect(() => {
-    const timer = setTimeout(() => setIsLoading(false), 800);
-    return () => clearTimeout(timer);
-  }, []);
+  const {
+    cases,
+    junctions,
+    violationTypes,
+    stations,
+    meta,
+    fetchCases,
+    fetchHotspots,
+    fetchMeta,
+    fetchStations,
+    fetchViolationTypes,
+  } = useViolationPoliceStore();
 
-  const meta = getViolationMeta();
-  const violationTypes = getViolationTypes();
-  const stations = getStationList();
-  const allViolations = getAllViolations();
-  const hotspots = getJunctionHotspots(30);
-  const mapHotspots = toMapHotspots(hotspots);
+  useEffect(() => {
+    Promise.all([
+      fetchMeta(),
+      fetchStations(),
+      fetchViolationTypes(),
+      fetchHotspots(),
+    ]).finally(() => {
+      setIsLoading(false);
+    });
+  }, [fetchMeta, fetchStations, fetchViolationTypes, fetchHotspots]);
+
+  // Debounced backend cases query search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fetchCases({
+        q: searchQuery || undefined,
+        status: undefined,
+        station: selectedStation || undefined,
+        limit: 100,
+      });
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery, selectedStation, fetchCases]);
+
+  const mapHotspots = toMapHotspots(junctions);
   const uniqueJunctionNames = useMemo(() => {
-    return Array.from(new Set(hotspots.map((h) => h.junctionName)));
-  }, [hotspots]);
+    return Array.from(new Set(junctions.map((h) => h.junctionName)));
+  }, [junctions]);
 
   const filteredViolations = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    return allViolations.filter((v) => {
+    return cases.filter((v) => {
       const matchesQuery =
         !q ||
         [v.vehicleNumber, v.updatedVehicleNumber ?? "", v.location, v.policeStation, v.junctionName, ...v.violationTypes]
@@ -58,7 +80,7 @@ export default function ViolationsExplorerPage() {
         (!selectedJunction || v.junctionName === selectedJunction)
       );
     });
-  }, [allViolations, searchQuery, selectedType, selectedStation, selectedJunction]);
+  }, [cases, searchQuery, selectedType, selectedStation, selectedJunction]);
 
   const stats = useMemo(() => {
     return {
@@ -67,7 +89,7 @@ export default function ViolationsExplorerPage() {
       approved: filteredViolations.filter((v) => v.validationStatus === "approved").length,
       duplicate: filteredViolations.filter((v) => v.validationStatus === "duplicate").length,
       critical: filteredViolations.filter((v) =>
-        v.violationTypes.some((t) => t.toLowerCase().includes("main road") || t.toLowerCase().includes("crossing"))
+        v.violationTypes.some((t) => t.toLowerCase().includes("main road") || t.toLowerCase().includes("crossing") || t.toLowerCase().includes("speed") || t.toLowerCase().includes("helmet"))
       ).length,
     };
   }, [filteredViolations]);
@@ -123,7 +145,7 @@ export default function ViolationsExplorerPage() {
           <Card>
             <CardHeader>
               <CardTitle>Cases matching filters</CardTitle>
-              <CardDescription>Search and filter violation cases. Showing {filteredViolations.length.toLocaleString("en-IN")} of {meta.sampledCases.toLocaleString("en-IN")} demo cases.</CardDescription>
+              <CardDescription>Search and filter violation cases. Showing {filteredViolations.length.toLocaleString("en-IN")} of {meta?.sampledCases?.toLocaleString("en-IN") ?? 0} demo cases.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="grid gap-2 lg:grid-cols-4">

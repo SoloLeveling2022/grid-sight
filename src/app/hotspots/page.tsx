@@ -217,6 +217,10 @@ export default function HotspotsPage() {
                   setSelectedHotspot(hs);
                   setSelectedJunc(null);
                 }}
+                onSelectJunction={(j) => {
+                  setSelectedJunc(j);
+                  setSelectedHotspot(null);
+                }}
               />
             </div>
           </Card>
