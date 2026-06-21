@@ -246,7 +246,7 @@ export function VoiceAgent({ persona }: VoiceAgentProps) {
       }
     } catch (err) {
       setCallStatus("Error");
-      addHistory("assistant", "Error establishing outbound Ringg AI voice session.");
+      addHistory("assistant", "Error establishing outbound voice telephony session.");
       setTimeout(() => setCallStatus(null), 4000);
     } finally {
       setCalling(false);
@@ -281,7 +281,7 @@ export function VoiceAgent({ persona }: VoiceAgentProps) {
                     <Volume2 className="h-4 w-4 text-amber-400" />
                     GridSight Voice · {persona === "police" ? "Officer" : "Citizen"}
                   </CardTitle>
-                  <p className="text-[10px] text-slate-500 mt-1">Ringg AI Agent Integration Enabled</p>
+                    <p className="text-[10px] text-slate-500 mt-1">Voice Agent Core Integration Enabled</p>
                 </div>
                 <Button variant="ghost" size="icon" onClick={() => setOpen(false)}>
                   <X className="h-4 w-4" />

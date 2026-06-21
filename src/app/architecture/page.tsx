@@ -23,9 +23,9 @@ import {
   Map,
   Shield,
   HelpCircle,
-  Award,
   Zap,
-  BarChart3
+  Sliders,
+  Radio
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -35,7 +35,7 @@ interface Scenario {
   title: string;
   description: string;
   steps: string[];
-  activeNodes: string[]; // Nodes that should glow
+  activeNodes: string[]; // Nodes that should glow in the UI diagram
   techNotes: string;
 }
 
@@ -45,60 +45,61 @@ const SCENARIOS: Scenario[] = [
     id: "mappls-map",
     category: "core",
     title: "Mappls SDK Map Integration",
-    description: "High-performance vector map layer mapping coordinate markers, circular density hotspots, and routing paths.",
+    description: "Renders high-performance interactive maps with search capability, customized marker rendering, and real-time routing coordinate overlays.",
     steps: [
-      "Next.js components mount the map canvas using a unified vector map container.",
-      "The SDK loader requests tiles and segment layers, dropping back to a custom styled SVG fallback grid if offline.",
-      "Map queries active violation density points and registers TomTom incidents overlays.",
-      "Marker sizes and route lines are plotted dynamically using geo-coordinates from Zustand store."
+      "Next.js Client App mounts the Map component wrapper on page load.",
+      "The Map component dynamically loads vector tile scripts and sets viewport coordinate bounds.",
+      "If network offline or SDK key fails, map defaults to local interactive SVG vector fallback.",
+      "Dashboard fetches live traffic segments and incidents data from traffic telemetry REST endpoints.",
+      "Plotted markers are rendered as circular vector buffers scaled by incident count and congestion score."
     ],
     activeNodes: ["dashboard", "traffic-api"],
-    techNotes: "File: mappls-sdk.ts | Key: NEXT_PUBLIC_MAPPLS_API_KEY (TomTom redirection)"
+    techNotes: "Files: src/components/map/gridsight-map.tsx, src/services/map/mappls-sdk.ts | SDK: Mappls Vector Tile SDK"
   },
   {
     id: "validation-queue",
     category: "core",
     title: "Unified Case Validation Queue",
-    description: "中央 control room dashboard queue where operators filter, batch-select, and validate tickets.",
+    description: "Provides a centralized dashboard with search and filter controls where operators can multi-select, approve, reject, or flag duplicate violation cases.",
     steps: [
-      "Operator inputs plates, filters by station/junction, or selects validation status (e.g. pending).",
-      "Next.js fetches paginated search metrics from FastAPI backend routes.",
-      "Operator selects cases in batch and clicks Approve, Reject, or Flag Duplicate.",
-      "FastAPI updates validation status and timestamps on MongoDB Atlas, returning write confirmations.",
-      "Zustand updates the local queue list states optimistically."
+      "Operator filters queue by station, violation class, and status (default: pending).",
+      "Zustand store queries search endpoint on REST API Engine.",
+      "Backend performs query limits and regex match filters on Cloud NoSQL Database.",
+      "Operator checks multiple violations and triggers bulk validation action POST.",
+      "Backend updates validation states and audit timestamps in database, optimistically updating UI tabs."
     ],
     activeNodes: ["dashboard", "fastapi", "mongodb"],
-    techNotes: "Endpoints: GET /api/violations/search | POST /api/violations/{id}/validate"
+    techNotes: "Endpoints: GET /api/violations/search, POST /api/violations/{id}/validate | Files: ml-service/app/routes/violations.py, src/app/police/page.tsx"
   },
   {
     id: "citizen-reports",
     category: "core",
     title: "Citizen Obstruction Reporting",
-    description: "Citizen portal allowing the public to report roadside obstructions and track plate validation states.",
+    description: "Enables citizen personas to submit roadside parking obstruction reports with location and image uploads, syncing instantly to the validation queue.",
     steps: [
-      "Citizen enters plate details, location names, coordinates, and uploads an image of the obstruction.",
-      "Citizen store captures inputs locally and handles state mapping.",
-      "Submits a payload with Base64 image data to the FastAPI ingestion route.",
-      "FastAPI saves the image in local static storage (or S3) and creates a public evidence link.",
-      "Saves a new case record on MongoDB Atlas with validation_status = pending."
+      "Citizen opens public advisory page and inputs location details and vehicle plate.",
+      "Citizen uploads an evidence photo of the obstruction.",
+      "Form converts image to Base64 and sends ingestion request to REST API Engine.",
+      "Backend writes image to static storage or S3 bucket and generates a public URL.",
+      "Insert new case record into Cloud NoSQL Database with status 'pending', showing instantly in operator queue."
     ],
-    activeNodes: ["citizen", "fastapi", "mongodb"],
-    techNotes: "Endpoints: POST /api/violations/ingest | File: storage.py"
+    activeNodes: ["citizen", "fastapi", "mongodb", "dashboard"],
+    techNotes: "Endpoints: POST /api/violations/ingest | Files: ml-service/app/services/storage.py, src/app/citizen/page.tsx"
   },
   {
     id: "camera-simulator",
     category: "core",
-    title: "Polygon Editor & AI Camera Simulator",
-    description: "Interactive polygon coordinate editor running stationary checks inside edge AI zones.",
+    title: "Interactive Polygon Zone Editor & AI Camera Inference Simulator",
+    description: "Renders a custom drawing widget on the map allowing operators to define no-parking polygons, track stationary vehicles, and auto-ingest tickets if vehicles remain static for >= 10 seconds.",
     steps: [
-      "Operator selects a corridor and draws a virtual no-parking boundary polygon on the map canvas.",
-      "Saves polygon vertices under cameraZones[junctionName] in Zustand.",
-      "Operator launches CCTV Simulator which tracks vehicle centroid coordinates across frames.",
-      "Simulator sends vertices, coordinates, and frames indices to FastAPI.",
-      "FastAPI runs a Ray Casting point-in-polygon algorithm. If a vehicle remains inside the polygon for >= 10 seconds, it ingests a wrong-parking ticket."
+      "Operator draws zone polygon coordinates directly on the map canvas.",
+      "Map component caches vertices in Zustand store under cameraZones.",
+      "Operator mounts CCTV Simulator which tracks vehicle centroid bounding boxes.",
+      "Tracker POSTs frame data (bounding box coordinates, polygon vertices, time index) to FastAPI.",
+      "Backend executes Ray Casting point-in-polygon math; if vehicle remains static >= 10s, it auto-ingests a parking violation."
     ],
     activeNodes: ["camera", "fastapi", "mongodb", "dashboard"],
-    techNotes: "Endpoints: POST /api/violations/detect-parking | Ray-Casting check in violations.py"
+    techNotes: "Endpoints: POST /api/violations/detect-parking | Files: ml-service/app/routes/violations.py, src/app/police/page.tsx (Simulator)"
   },
   
   // ─── USPs ──────────────────────────────────────────────────────────────────
@@ -106,191 +107,200 @@ const SCENARIOS: Scenario[] = [
     id: "congestion-ml",
     category: "usp",
     title: "Congestion Impact Quantification",
-    description: "Random Forest ML models calculating delay times and blending them with live flow telemetry.",
+    description: "Predicts traffic speed drops and expected delay minutes using a Random Forest model combined with live Traffic Telemetry API inputs.",
     steps: [
-      "Operator selects a violation case in the queue sidebar.",
-      "Dashboard POSTs lat, lng, time, and vehicle metadata to the ML route.",
-      "FastAPI loads a pre-trained scikit-learn Random Forest model to predict delay minutes.",
-      "Queries TomTom Traffic Flow APIs to evaluate free-flow vs. current speeds at coordinates.",
-      "Blends historical ML model prediction (40%) and live telemetry speed drops (60%) to return expected delay, speed loss, and congestion score."
+      "Operator clicks violation card to view details in the dashboard queue sidebar.",
+      "Client requests impact predictions from backend by posting incident coordinates.",
+      "Backend loads pre-trained scikit-learn Random Forest model (congestion_model.pkl).",
+      "Queries live traffic flow API for current vs. free-flow speeds.",
+      "Blends model prediction (40%) and live speed drop telemetry (60%) to return delay minutes and congestion scores."
     ],
     activeNodes: ["dashboard", "fastapi", "ml-models", "traffic-api"],
-    techNotes: "Endpoints: POST /api/ml/predict-impact | Model: congestion_model.pkl"
+    techNotes: "Endpoints: POST /api/ml/predict-impact | Models: congestion_model.pkl (Random Forest) | Files: ml-service/app/predict.py"
   },
   {
-    id: "outcome-loop",
+    id: "fine-invoicing",
     category: "usp",
-    title: "Enforcement Outcomes Feedback Loop",
-    description: "Dynamic simulation reflecting patrol resolutions by reducing map weights and delays by 85%.",
+    title: "Traffic Fine Invoicing & Revenue Projections",
+    description: "Simulates fine invoicing based on violation types and generates real-time municipal revenue projections with interactive graphs.",
     steps: [
-      "A severe-priority hotspot shows high congestion weight on the dashboard.",
-      "Operator dispatches a patrol unit (state moves: NoPatrol -> Dispatched).",
-      "Operator logs citation action on location (state moves: Dispatched -> ActionTaken).",
-      "Operator closes the case (state moves: ActionTaken -> Closed).",
-      "Zustand updates local scores: scales expected delay by 0.15 (85% reduction) and updates priority to low, which dynamically changes the heatmap color."
+      "Operator selects approved violation cases and clicks 'Generate Invoice'.",
+      "Backend queries penalty rule matrix to calculate fine amounts per offense code.",
+      "Invoice record is saved to Cloud NoSQL Database, generating dynamic payment links.",
+      "System aggregates all active invoices by month, class, and payment status.",
+      "Renders expected vs. collected revenue charts on municipal dashboard panels."
     ],
-    activeNodes: ["dashboard", "mongodb"],
-    techNotes: "State machine managed in Zustand store: useViolationPoliceStore"
+    activeNodes: ["dashboard", "fastapi", "mongodb"],
+    techNotes: "Endpoints: GET /api/finance/revenue-projection | Files: ml-service/app/routes/finance.py"
   },
   {
-    id: "mongo-atlas",
+    id: "voice-outreach",
     category: "usp",
-    title: "MongoDB Atlas Cloud Integration",
-    description: "High-throughput cloud database replacing local SQLite to run complex aggregations on 298k+ records.",
+    title: "Voice Telephony Automated Outreach",
+    description: "Outbound dispatch agent using voice calls to alert field officers with live status logs and automatic post-call transcription.",
     steps: [
-      "FastAPI backend launches and reads DATABASE_URL credentials.",
-      "database.py initializes a native MongoClient using secure TLS and pings the DB.",
-      "API queries are processed directly on Atlas utilizing MongoDB aggregations.",
-      "Pipelines use allowDiskUse=True to efficiently analyze and aggregate 298k+ records."
+      "Operator clicks 'Call Dispatcher' in the voice agent drawer.",
+      "Dashboard POSTs junction details, officer name, and coordinates to Next.js API.",
+      "API issues REST request to Voice Telephony Gateway.",
+      "Gateway dials the officer's phone, delivering spoken incident alerts.",
+      "Dashboard polls status API to trace call states and appends final transcript to logs."
     ],
-    activeNodes: ["fastapi", "mongodb"],
-    techNotes: "File: database.py | Client driver: PyMongo (MongoClient with TLS)"
+    activeNodes: ["voice-ui", "next-api", "telephony-gateway"],
+    techNotes: "Endpoints: POST /api/voice/call, GET /api/voice/call/status | Files: src/app/api/voice/call/route.ts"
+  },
+  {
+    id: "offence-clustering",
+    category: "usp",
+    title: "Offence Clustering Heatmaps",
+    description: "Groups historical logs using DBSCAN clustering to identify peak violation centroids, peak hours, and proximity to sensitive places like schools and hospitals.",
+    steps: [
+      "Backend loads DBSCAN model (hotspot_clustering.pkl) on startup.",
+      "Aggregates coordinate logs from MongoDB database using density parameters.",
+      "Extracts centroids, total violations, peak hours, and schools proximity.",
+      "JSON centroids list is sent to client store to update map coordinates.",
+      "Map component calculates weights (weight = incidentCount * congestionScore) and renders the heatmap layer."
+    ],
+    activeNodes: ["dashboard", "fastapi", "ml-models", "mongodb", "traffic-api"],
+    techNotes: "Endpoints: GET /api/ml/hotspots | Models: hotspot_clustering.pkl (DBSCAN Clustering) | Files: ml-service/app/routes/ml.py"
   },
 
   // ─── Innovative Features ──────────────────────────────────────────────────
   {
-    id: "dbscan-clustering",
+    id: "drone-planner",
     category: "innovative",
-    title: "DBSCAN Spatial Hotspot Clustering",
-    description: "Pickled DBSCAN clustering models grouping coordinate densities into weighted hotspots.",
+    title: "Drone Route Planner & Video Ingest Simulator",
+    description: "Automatically calculates the most efficient patrol flight paths for unmanned drones across major junctions and simulates video stream ingestion.",
     steps: [
-      "FastAPI initializes and loads hotspot_clustering.pkl containing DBSCAN centroid coordinates.",
-      "Groups coordinate densities into hotspot clusters (200m radius threshold).",
-      "Enriches centroids with case count, unique plates, peak hours, and sensitive place proximities.",
-      "Client queries hotspots list, mapping database models into coordinate markers."
+      "Operator clicks 'Launch Drone Simulation' on dashboard control panel.",
+      "Server calculates patrol routing waypoints using priority TSP heuristic.",
+      "Video stream simulator reads coordinates and generates simulated CCTV frame packets.",
+      "Packets are POSTed to REST API Engine for real-time validation checks.",
+      "Drone coordinates and status are updated live on the map overlay."
     ],
-    activeNodes: ["fastapi", "ml-models", "mongodb", "dashboard"],
-    techNotes: "Endpoints: GET /api/ml/hotspots | Model: hotspot_clustering.pkl"
+    activeNodes: ["drone", "fastapi", "ml-models", "dashboard"],
+    techNotes: "Endpoints: GET /api/ml/drone-route | Files: ml-service/app/routes/drone.py"
   },
   {
-    id: "priority-scoring",
+    id: "rerouting-nav",
     category: "innovative",
-    title: "Multi-Factor Priority Scoring",
-    description: "Enforcement prioritizer calculating index scores based on density, delay, repeat plate count, and school zones.",
+    title: "Intelligent Rerouting & Navigation API",
+    description: "Generates alternate routing paths for citizens to safely bypass traffic incidents and active violation hotspots.",
     steps: [
-      "Backend queries MongoDB to fetch active violation coordinates.",
-      "Calculates priority index based on density, delay minutes, and repeat plate metrics.",
-      "Scans local database strings for sensitive zone keywords (school, hospital, metro, bus stop) to apply severe boosts.",
-      "Returns ranked items categorized by priority levels (Low, Medium, High, Severe)."
+      "Citizen inputs origin and destination coordinates on the public advisory portal.",
+      "Citizen store queries highest-ranked enforcement priority coordinates.",
+      "Navigation router calculates detour path bypassing active hotspots.",
+      "Renders standard route in red and detour route in green.",
+      "Displays detour direction instructions (e.g. 'Standard route congested; detour via alternate path')."
     ],
-    activeNodes: ["fastapi", "mongodb", "dashboard"],
-    techNotes: "Endpoints: GET /api/ml/enforcement-priorities | Formula weights: density, delay, repeat offenders, zones"
+    activeNodes: ["citizen", "fastapi", "traffic-api", "dashboard"],
+    techNotes: "Files: src/app/citizen/page.tsx, src/components/map/gridsight-map.tsx"
   },
   {
-    id: "weighted-heatmap",
+    id: "traffic-light-analytics",
     category: "innovative",
-    title: "Real Weighted Heatmap Layer",
-    description: "Map overlay displaying coordinate density weights mapped to expected traffic delays.",
+    title: "AI-Driven Smart Traffic Light Signal Analytics",
+    description: "Analyzes vehicle density logs at junctions to simulate adaptive traffic light cycles, minimizing waiting time.",
     steps: [
-      "Frontend maps read violation coordinates from the hotspot endpoint.",
-      "Each point is assigned a weight: w = violationCount * congestionScore.",
-      "Weights are passed to the map canvas heatmap layer.",
-      "Renders color gradients (Red = high delay impact, Green = low).",
-      "Dropdown selections (time of day, station) dynamically filter the dataset, redrawing the heatmap."
+      "Smart junction sensors send lane-wise vehicle queue counts.",
+      "Backend runs signal analytics logic to compute optimized green durations.",
+      "Computes optimized traffic light state cycles.",
+      "Signal timers update state in the database.",
+      "Dashboard displays live junction status and traffic light cycle timelines."
     ],
-    activeNodes: ["dashboard", "traffic-api"],
-    techNotes: "Weight Formula: incidentCount * congestionScore | Rendered in gridsight-map.tsx"
+    activeNodes: ["traffic-light", "fastapi", "ml-models", "dashboard"],
+    techNotes: "Endpoints: GET /api/traffic-light/analytics | Files: ml-service/app/routes/signals.py"
   },
   {
-    id: "patrol-routing",
+    id: "multi-agent-solver",
     category: "innovative",
-    title: "Optimized Patrol Routing TSP Heuristic",
-    description: "TSP heuristic solving routing paths starting from highest priority waypoint with priority cost discount.",
+    title: "Multi-Agent Agentic LLM Solver",
+    description: "Spawns agentic LLM solvers to resolve complex traffic logs, analyze reports, and output structured operational advice.",
     steps: [
-      "Operator requests a patrol route from the dashboard.",
-      "FastAPI fetches highest-ranked enforcement coordinates.",
-      "A TSP heuristic calculates distance vectors between coordinates using Haversine.",
-      "Cost function discounts distances if adjacent waypoints have severe priority scores or high open case counts.",
-      "Paths are drawn on the vector map as a blue route line."
+      "Operator inputs a general query (e.g. 'Solve Magadi Road congestion').",
+      "Orchestrator spawns specialized agents (Data Analyst, Dispatch Planner, Traffic Engineer).",
+      "Agents exchange context, query database, and run ML impact predictions.",
+      "Agents synthesize recommendations and output structured JSON advice.",
+      "Next.js app renders conversational results and actionable dispatch buttons."
     ],
-    activeNodes: ["dashboard", "fastapi", "ml-models", "traffic-api"],
-    techNotes: "Endpoints: GET /api/ml/patrol-route | Heuristic: Haversine TSP Route Heuristic"
+    activeNodes: ["dashboard", "fastapi", "agentic-llm", "mongodb"],
+    techNotes: "Endpoints: POST /api/agentic/solve | LLM Engine: Multi-Agent LLM Solver API"
   },
 
   // ─── Operations & Analytics ────────────────────────────────────────────────
   {
-    id: "recidivism-analytics",
+    id: "device-health",
     category: "operations",
-    title: "Recidivism plate Analytics",
-    description: "Enforcement scoring engine grouping case frequencies and locations per vehicle number.",
+    title: "Live Device Health Monitoring",
+    description: "Real-time ping telemetry tracking CCTV camera status, network connectivity, latency, and sensor diagnostic logs.",
     steps: [
-      "Operator selects the 'Offenders' analytics tab on the dashboard.",
-      "FastAPI aggregates MongoDB records grouping by vehicle_number.",
-      "Calculates an individual Enforcement Score based on infraction frequency, severity boosts (footpath/double parking), and station diversity.",
-      "Returns records sorted by Enforcement Score, allowing operators to click any plate to filter their exact cases on the map."
+      "Dashboard ping service fires heartbeat request to active devices.",
+      "Devices respond with latency, FPS, memory usage, and operational status.",
+      "Server logs response statistics in database.",
+      "Alert trigger flags cameras with latency > 500ms or offline status.",
+      "Dashboard displays live health grid with status badges."
+    ],
+    activeNodes: ["dashboard", "fastapi", "camera", "traffic-light"],
+    techNotes: "Endpoints: GET /api/devices/health | Files: ml-service/app/routes/devices.py"
+  },
+  {
+    id: "sla-analytics",
+    category: "operations",
+    title: "SLA & Response Analytics",
+    description: "Tracks municipal ticket resolution times, citizen report responses, and police patrol dispatch SLA compliance.",
+    steps: [
+      "Case state transitions (e.g., pending -> approved -> closed) log time indices.",
+      "Server aggregates elapsed duration from ticket creation to patrol closure.",
+      "Compares actual duration with SLA limits (e.g., 30 minutes).",
+      "Computes compliance rates per police station.",
+      "Renders SLA trends and target benchmarks on analytics tab."
     ],
     activeNodes: ["dashboard", "fastapi", "mongodb"],
-    techNotes: "Endpoints: GET /api/violations/repeat-offenders | Score: count*12 + severity*20 + stations*6"
+    techNotes: "Endpoints: GET /api/analytics/sla | Files: ml-service/app/routes/analytics.py"
   },
   {
-    id: "device-productivity",
+    id: "roster-resource",
     category: "operations",
-    title: "Device Productivity Analytics",
-    description: "Aggregation metrics tracking capture approvals, rejections, and sensor rates.",
+    title: "Dynamic Roster & Resource Management",
+    description: "Allocates traffic police personnel and patrol vehicles based on real-time junction congestion and priority weights.",
     steps: [
-      "Client requests device statistics.",
-      "FastAPI groups documents by device_id.",
-      "Calculates total captures, approval rates, and rejection rates.",
-      "Displays analytics on the dashboard to audit sensor health and productivity."
+      "System queries current shift rosters and active patrol positions.",
+      "Scans enforcement priority scores to find high-need hotspots.",
+      "Dispatch recommendation algorithm matches roster to hotspots.",
+      "Operator confirms allocation, alerting officer phone.",
+      "Updates roster statuses live on the operations panel."
     ],
     activeNodes: ["dashboard", "fastapi", "mongodb"],
-    techNotes: "Endpoints: GET /api/violations/device-productivity"
+    techNotes: "Endpoints: GET /api/roster/allocation | Files: ml-service/app/routes/roster.py"
   },
   {
-    id: "hotspot-inspector",
+    id: "operator-productivity",
     category: "operations",
-    title: "Interactive Hotspot Inspector",
-    description: "Sidebar inspector mounting unique vehicle stats, peak hours, and dispatch triggers on map clicks.",
+    title: "Operator Productivity Dashboard",
+    description: "Tracks police queue validation statistics, average check times, approval rates, and individual operator work rates.",
     steps: [
-      "Operator clicks a hotspot node on the map or rankings list.",
-      "The click handler triggers the selector, storing the name in Zustand.",
-      "The Sidebar details component mounts, displaying unique vehicles, peak hours, sensitive zones, and expected delay.",
-      "Action buttons (Dispatch Patrol, Outbound Call) focus on the chosen coordinate context."
+      "Database logs operator email, action type, and validation durations.",
+      "Server queries validations collection (limiting to 20,000 cases).",
+      "Groups metrics by operator, calculating total processed and error rate.",
+      "Calculates average validation speed (seconds per case).",
+      "Renders comparative bar charts on productivity tab."
     ],
-    activeNodes: ["dashboard"],
-    techNotes: "Files: src/components/dashboard/ priority lists & maps selection listeners"
+    activeNodes: ["dashboard", "fastapi", "mongodb"],
+    techNotes: "Endpoints: GET /api/analytics/operator-productivity | Files: ml-service/app/routes/analytics.py"
   },
   {
-    id: "alternate-routing",
+    id: "prompt-playground",
     category: "operations",
-    title: "Alternate Route Detour Planner",
-    description: "Citizen routing overlay displaying detours bypassing high-priority enforcement zones.",
+    title: "System Config & AI Prompt Playground",
+    description: "Allows administrators to adjust congestion model weights, prompt LLM solvers, and configure edge sensor parameters live.",
     steps: [
-      "Citizen enters Origin and Destination locations.",
-      "Zustand citizen store requests enforcement priorities to find active hotspots.",
-      "The router traces the primary path and calculates detour paths avoiding the highest-ranked hotspot.",
-      "Renders the standard route in red (incident warning) and the detour route in green (safety advice) on the map."
+      "Admin opens the system config playground panel.",
+      "Updates parameters (e.g. static vehicle time, Random Forest weight).",
+      "Modifies the system prompt template for multi-agent LLM solver.",
+      "Clicking save POSTs new config variables to backend.",
+      "Backend reloads config into memory, updating inference rules immediately."
     ],
-    activeNodes: ["citizen", "dashboard", "traffic-api"],
-    techNotes: "Files: src/app/citizen/page.tsx routing advisory simulator"
-  },
-  {
-    id: "voice-commands",
-    category: "operations",
-    title: "Intelligent Voice Agent UI",
-    description: "Floating voice agent parsing spoken intents and triggering Zustand store updates.",
-    steps: [
-      "Operator speaks a command or types into the voice input field.",
-      "Sends query to the Next.js API route to identify command intent.",
-      "Voice store receives the intent response and triggers the matching reducer (e.g. setCaseFilter).",
-      "Zustand updates the UI state (e.g. centers map, validates tickets, generates route), playing spoken text-to-speech confirmation."
-    ],
-    activeNodes: ["voice-ui", "next-api", "dashboard"],
-    techNotes: "Endpoints: POST /api/voice/command | Session: POST /api/voice/session"
-  },
-  {
-    id: "call-dispatcher",
-    category: "operations",
-    title: "Outbound Call AI Dispatcher",
-    description: "Outbound dispatch engine using Ringg AI voice calls to alert field officers with live status logs.",
-    steps: [
-      "Operator triggers call dispatcher from the voice agent drawer.",
-      "Next.js endpoint constructs a text summary of the hotspot violation.",
-      "POSTs to Ringg AI API which makes a real-world outbound phone call to the field officer.",
-      "Dashboard polls call/status to show call states. Once ended, the text transcript is appended to the console logs."
-    ],
-    activeNodes: ["voice-ui", "next-api", "ringg-api"],
-    techNotes: "Endpoints: POST /api/voice/call | GET /api/voice/call/status"
+    activeNodes: ["prompt-playground", "fastapi", "agentic-llm"],
+    techNotes: "Endpoints: POST /api/config/update | Files: ml-service/app/routes/config.py"
   }
 ];
 
@@ -364,7 +374,7 @@ export default function ArchitecturePage() {
             System Architecture
           </h1>
           <p className="text-slate-400 text-base md:text-lg">
-            Complete data flow mapping of GridSight's 17 features: Ingestion, machine learning inference, MongoDB Cloud scaling, and voice dispatch.
+            Complete data flow mapping of GridSight's 17 features: Ingestion, machine learning inference, Cloud Database scaling, and voice dispatch.
           </p>
         </div>
 
@@ -408,7 +418,7 @@ export default function ArchitecturePage() {
               </div>
 
               {/* Feature buttons */}
-              <div className="flex flex-col gap-2 max-h-[320px] overflow-y-auto pr-1 scrollbar-thin">
+              <div className="flex flex-col gap-2 max-h-[350px] overflow-y-auto pr-1 scrollbar-thin">
                 {filteredScenarios.map((scen) => (
                   <button
                     key={scen.id}
@@ -479,17 +489,17 @@ export default function ArchitecturePage() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6 relative z-10">
                 
                 {/* Column 1: Ingestion */}
-                <div className="flex flex-col gap-6">
+                <div className="flex flex-col gap-4">
                   <h4 className="text-[11px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-800 pb-2">
-                    1. INGESTION & DATA INFLOW
+                    1. INGESTION & EDGE LAYER
                   </h4>
                   
                   {/* CCTV Cameras */}
-                  <div className={`p-4 rounded-xl border transition-all duration-300 flex flex-col gap-2 ${
+                  <div className={`p-3 rounded-xl border transition-all duration-300 flex flex-col gap-1.5 ${
                     getIsActive("camera")
                       ? "bg-amber-500/10 border-amber-500 shadow-md shadow-amber-500/5 text-amber-400"
                       : activeScenario 
-                        ? "bg-slate-900/10 border-slate-900/60 text-slate-600 opacity-45"
+                        ? "bg-slate-900/10 border-slate-900/60 text-slate-650 opacity-45"
                         : "bg-slate-900/40 border-slate-800 text-slate-200"
                   }`}>
                     <div className="flex items-center gap-2">
@@ -497,114 +507,150 @@ export default function ArchitecturePage() {
                       <span className="font-semibold text-xs">Edge AI CCTV Feed</span>
                     </div>
                     <p className="text-[10px] text-slate-400 leading-relaxed">
-                      Virtual no-parking zone monitoring & stationary-time analysis.
+                      Virtual polygon zones & stationary vehicle simulators.
                     </p>
                     <span className="text-[9px] font-mono opacity-60">POST /detect-parking</span>
                   </div>
 
                   {/* Citizen Reports */}
-                  <div className={`p-4 rounded-xl border transition-all duration-300 flex flex-col gap-2 ${
+                  <div className={`p-3 rounded-xl border transition-all duration-300 flex flex-col gap-1.5 ${
                     getIsActive("citizen")
                       ? "bg-amber-500/10 border-amber-500 shadow-md shadow-amber-500/5 text-amber-400"
                       : activeScenario 
-                        ? "bg-slate-900/10 border-slate-900/60 text-slate-600 opacity-45"
+                        ? "bg-slate-900/10 border-slate-900/60 text-slate-650 opacity-45"
                         : "bg-slate-900/40 border-slate-800 text-slate-200"
                   }`}>
                     <div className="flex items-center gap-2">
                       <Smartphone className="h-4 w-4" />
-                      <span className="font-semibold text-xs">Citizen Portal Reports</span>
+                      <span className="font-semibold text-xs">Citizen Portal / Form</span>
                     </div>
                     <p className="text-[10px] text-slate-400 leading-relaxed">
-                      Public portal for route detours and reporting local obstacles.
+                      Citizen reports & advisory portal for route detours.
                     </p>
                     <span className="text-[9px] font-mono opacity-60">POST /violations/ingest</span>
                   </div>
 
-                  {/* Legacy Log File */}
-                  <div className={`p-4 rounded-xl border transition-all duration-300 flex flex-col gap-2 ${
+                  {/* Drone Simulator */}
+                  <div className={`p-3 rounded-xl border transition-all duration-300 flex flex-col gap-1.5 ${
+                    getIsActive("drone")
+                      ? "bg-amber-500/10 border-amber-500 shadow-md shadow-amber-500/5 text-amber-400"
+                      : activeScenario 
+                        ? "bg-slate-900/10 border-slate-900/60 text-slate-650 opacity-45"
+                        : "bg-slate-900/40 border-slate-800 text-slate-200"
+                  }`}>
+                    <div className="flex items-center gap-2">
+                      <Zap className="h-4 w-4" />
+                      <span className="font-semibold text-xs">Drone Flight Simulator</span>
+                    </div>
+                    <p className="text-[10px] text-slate-400 leading-relaxed">
+                      Patrol drones verifying hotspots and ingesting stream packets.
+                    </p>
+                    <span className="text-[9px] font-mono opacity-60">GET /ml/drone-route</span>
+                  </div>
+
+                  {/* Smart Signals */}
+                  <div className={`p-3 rounded-xl border transition-all duration-300 flex flex-col gap-1.5 ${
+                    getIsActive("traffic-light")
+                      ? "bg-amber-500/10 border-amber-500 shadow-md shadow-amber-500/5 text-amber-400"
+                      : activeScenario 
+                        ? "bg-slate-900/10 border-slate-900/60 text-slate-650 opacity-45"
+                        : "bg-slate-900/40 border-slate-800 text-slate-200"
+                  }`}>
+                    <div className="flex items-center gap-2">
+                      <Activity className="h-4 w-4" />
+                      <span className="font-semibold text-xs">Smart Light Signals</span>
+                    </div>
+                    <p className="text-[10px] text-slate-400 leading-relaxed">
+                      Telemetry tracking vehicle queues and Adaptive cycle times.
+                    </p>
+                    <span className="text-[9px] font-mono opacity-60">GET /signals/analytics</span>
+                  </div>
+
+                  {/* Historical Offence Logs */}
+                  <div className={`p-3 rounded-xl border transition-all duration-300 flex flex-col gap-1.5 ${
                     getIsActive("logs")
                       ? "bg-amber-500/10 border-amber-500 shadow-md shadow-amber-500/5 text-amber-400"
                       : activeScenario 
-                        ? "bg-slate-900/10 border-slate-900/60 text-slate-600 opacity-45"
+                        ? "bg-slate-900/10 border-slate-900/60 text-slate-650 opacity-45"
                         : "bg-slate-900/40 border-slate-800 text-slate-200"
                   }`}>
                     <div className="flex items-center gap-2">
                       <FileText className="h-4 w-4" />
-                      <span className="font-semibold text-xs">Bengaluru Traffic Logs</span>
+                      <span className="font-semibold text-xs">Historical Offence Logs</span>
                     </div>
                     <p className="text-[10px] text-slate-400 leading-relaxed">
-                      298k+ historical incidents compiled into analytics pipelines.
+                      298k+ historical incidents compiled into analytics datasets.
                     </p>
-                    <span className="text-[9px] font-mono opacity-60">Astram Incident Dataset</span>
+                    <span className="text-[9px] font-mono opacity-60">Offence Dataset File</span>
                   </div>
                 </div>
 
-                {/* Column 2: Application Routing */}
-                <div className="flex flex-col gap-6">
+                {/* Column 2: Orchestration */}
+                <div className="flex flex-col gap-4">
                   <h4 className="text-[11px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-800 pb-2">
                     2. ORCHESTRATION & ROUTING
                   </h4>
 
                   {/* Next.js Control Dashboard */}
-                  <div className={`p-4 rounded-xl border transition-all duration-300 flex flex-col gap-2 ${
+                  <div className={`p-3 rounded-xl border transition-all duration-300 flex flex-col gap-1.5 ${
                     getIsActive("dashboard")
                       ? "bg-amber-500/10 border-amber-500 shadow-md shadow-amber-500/5 text-amber-400"
                       : activeScenario 
-                        ? "bg-slate-900/10 border-slate-900/60 text-slate-600 opacity-45"
+                        ? "bg-slate-900/10 border-slate-900/60 text-slate-650 opacity-45"
                         : "bg-slate-900/40 border-slate-800 text-slate-200"
                   }`}>
                     <div className="flex items-center gap-2">
                       <Layers className="h-4 w-4" />
-                      <span className="font-semibold text-xs">Next.js Web Client</span>
+                      <span className="font-semibold text-xs">Next.js Client App</span>
                     </div>
                     <p className="text-[10px] text-slate-400 leading-relaxed">
-                      React 19 App with Zustand states mapping snake_case payload integrations.
+                      React 19 App with Zustand stores mapping backend schemas.
                     </p>
                     <span className="text-[9px] font-mono opacity-60">Zustand Client Stores</span>
                   </div>
 
                   {/* FastAPI Python Backend */}
-                  <div className={`p-4 rounded-xl border transition-all duration-300 flex flex-col gap-2 ${
+                  <div className={`p-3 rounded-xl border transition-all duration-300 flex flex-col gap-1.5 ${
                     getIsActive("fastapi")
                       ? "bg-amber-500/10 border-amber-500 shadow-md shadow-amber-500/5 text-amber-400"
                       : activeScenario 
-                        ? "bg-slate-900/10 border-slate-900/60 text-slate-600 opacity-45"
+                        ? "bg-slate-900/10 border-slate-900/60 text-slate-650 opacity-45"
                         : "bg-slate-900/40 border-slate-800 text-slate-200"
                   }`}>
                     <div className="flex items-center gap-2">
                       <Cpu className="h-4 w-4" />
-                      <span className="font-semibold text-xs">FastAPI ML Core</span>
+                      <span className="font-semibold text-xs">REST API Engine (FastAPI)</span>
                     </div>
                     <p className="text-[10px] text-slate-400 leading-relaxed">
-                      Python high-throughput microservice handling ML inference & queues.
+                      Python service serving predictions, validations, and analytics.
                     </p>
-                    <span className="text-[9px] font-mono opacity-60">Uvicorn / Pydantic Contracts</span>
+                    <span className="text-[9px] font-mono opacity-60">FastAPI / Uvicorn Server</span>
                   </div>
 
                   {/* Next.js Server API Routes */}
-                  <div className={`p-4 rounded-xl border transition-all duration-300 flex flex-col gap-2 ${
+                  <div className={`p-3 rounded-xl border transition-all duration-300 flex flex-col gap-1.5 ${
                     getIsActive("next-api")
                       ? "bg-amber-500/10 border-amber-500 shadow-md shadow-amber-500/5 text-amber-400"
                       : activeScenario 
-                        ? "bg-slate-900/10 border-slate-900/60 text-slate-600 opacity-45"
+                        ? "bg-slate-900/10 border-slate-900/60 text-slate-650 opacity-45"
                         : "bg-slate-900/40 border-slate-800 text-slate-200"
                   }`}>
                     <div className="flex items-center gap-2">
                       <Cpu className="h-4 w-4" />
-                      <span className="font-semibold text-xs">Next.js Server API</span>
+                      <span className="font-semibold text-xs">Next.js Serverless Routes</span>
                     </div>
                     <p className="text-[10px] text-slate-400 leading-relaxed">
-                      Serverless API routes bridging Ringg AI voice sessions and dispatch calls.
+                      Handles outbound telephony alerts and webhook notifications.
                     </p>
                     <span className="text-[9px] font-mono opacity-60">/api/voice/*</span>
                   </div>
 
                   {/* Voice UI Command Center */}
-                  <div className={`p-4 rounded-xl border transition-all duration-300 flex flex-col gap-2 ${
+                  <div className={`p-3 rounded-xl border transition-all duration-300 flex flex-col gap-1.5 ${
                     getIsActive("voice-ui")
                       ? "bg-amber-500/10 border-amber-500 shadow-md shadow-amber-500/5 text-amber-400"
                       : activeScenario 
-                        ? "bg-slate-900/10 border-slate-900/60 text-slate-600 opacity-45"
+                        ? "bg-slate-900/10 border-slate-900/60 text-slate-650 opacity-45"
                         : "bg-slate-900/40 border-slate-800 text-slate-200"
                   }`}>
                     <div className="flex items-center gap-2">
@@ -612,90 +658,125 @@ export default function ArchitecturePage() {
                       <span className="font-semibold text-xs">Intelligent Voice Agent</span>
                     </div>
                     <p className="text-[10px] text-slate-400 leading-relaxed">
-                      Floating command center translating spoken commands into dashboard triggers.
+                      Floating agent routing microphone inputs to Zustand store actions.
                     </p>
-                    <span className="text-[9px] font-mono opacity-60">Speech-to-Action Parser</span>
+                    <span className="text-[9px] font-mono opacity-60">Speech Intent Parser</span>
+                  </div>
+
+                  {/* Prompt Playground */}
+                  <div className={`p-3 rounded-xl border transition-all duration-300 flex flex-col gap-1.5 ${
+                    getIsActive("prompt-playground")
+                      ? "bg-amber-500/10 border-amber-500 shadow-md shadow-amber-500/5 text-amber-400"
+                      : activeScenario 
+                        ? "bg-slate-900/10 border-slate-900/60 text-slate-650 opacity-45"
+                        : "bg-slate-900/40 border-slate-800 text-slate-200"
+                  }`}>
+                    <div className="flex items-center gap-2">
+                      <Sliders className="h-4 w-4" />
+                      <span className="font-semibold text-xs">Prompt Config Playground</span>
+                    </div>
+                    <p className="text-[10px] text-slate-400 leading-relaxed">
+                      UI panel adjusting model weights and editing agent LLM prompts.
+                    </p>
+                    <span className="text-[9px] font-mono opacity-60">Config Admin Panel</span>
                   </div>
                 </div>
 
-                {/* Column 3: Engine & Datastores */}
-                <div className="flex flex-col gap-6">
+                {/* Column 3: Intelligence & Core Data */}
+                <div className="flex flex-col gap-4">
                   <h4 className="text-[11px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-800 pb-2">
                     3. INTELLIGENCE & CORE DATA
                   </h4>
 
-                  {/* MongoDB Atlas */}
-                  <div className={`p-4 rounded-xl border transition-all duration-300 flex flex-col gap-2 ${
+                  {/* Cloud Database */}
+                  <div className={`p-3 rounded-xl border transition-all duration-300 flex flex-col gap-1.5 ${
                     getIsActive("mongodb")
                       ? "bg-amber-500/10 border-amber-500 shadow-md shadow-amber-500/5 text-amber-400"
                       : activeScenario 
-                        ? "bg-slate-900/10 border-slate-900/60 text-slate-600 opacity-45"
+                        ? "bg-slate-900/10 border-slate-900/60 text-slate-650 opacity-45"
                         : "bg-slate-900/40 border-slate-800 text-slate-200"
                   }`}>
                     <div className="flex items-center gap-2">
                       <Database className="h-4 w-4" />
-                      <span className="font-semibold text-xs">MongoDB Atlas</span>
+                      <span className="font-semibold text-xs">Cloud NoSQL Database</span>
                     </div>
                     <p className="text-[10px] text-slate-400 leading-relaxed">
-                      Dynamic database holding cases, coordinates, and officer productivity metrics.
+                      Stores offences and validations; processes heavy aggregations.
                     </p>
-                    <span className="text-[9px] font-mono opacity-60">PyMongo Aggregations</span>
+                    <span className="text-[9px] font-mono opacity-60">NoSQL Document Store</span>
                   </div>
 
                   {/* ML Models */}
-                  <div className={`p-4 rounded-xl border transition-all duration-300 flex flex-col gap-2 ${
+                  <div className={`p-3 rounded-xl border transition-all duration-300 flex flex-col gap-1.5 ${
                     getIsActive("ml-models")
                       ? "bg-amber-500/10 border-amber-500 shadow-md shadow-amber-500/5 text-amber-400"
                       : activeScenario 
-                        ? "bg-slate-900/10 border-slate-900/60 text-slate-600 opacity-45"
+                        ? "bg-slate-900/10 border-slate-900/60 text-slate-650 opacity-45"
                         : "bg-slate-900/40 border-slate-800 text-slate-200"
                   }`}>
                     <div className="flex items-center gap-2">
                       <Cpu className="h-4 w-4" />
-                      <span className="font-semibold text-xs">ML Models (scikit-learn)</span>
+                      <span className="font-semibold text-xs">ML Model Core</span>
                     </div>
                     <p className="text-[10px] text-slate-400 leading-relaxed">
-                      DBSCAN clustering hotspots and Random Forest predicting congestion delay.
+                      DBSCAN clustering and Random Forest predicting congestion delay.
                     </p>
-                    <span className="text-[9px] font-mono opacity-60">Pickle Artifact Files</span>
+                    <span className="text-[9px] font-mono opacity-60">scikit-learn Model PKLs</span>
                   </div>
 
                   {/* Maps & Traffic APIs */}
-                  <div className={`p-4 rounded-xl border transition-all duration-300 flex flex-col gap-2 ${
-                    getIsActive("traffic-api") || getIsActive("maps-sdk")
+                  <div className={`p-3 rounded-xl border transition-all duration-300 flex flex-col gap-1.5 ${
+                    getIsActive("traffic-api")
                       ? "bg-amber-500/10 border-amber-500 shadow-md shadow-amber-500/5 text-amber-400"
                       : activeScenario 
-                        ? "bg-slate-900/10 border-slate-900/60 text-slate-600 opacity-45"
+                        ? "bg-slate-900/10 border-slate-900/60 text-slate-650 opacity-45"
                         : "bg-slate-900/40 border-slate-800 text-slate-200"
                   }`}>
                     <div className="flex items-center gap-2">
                       <Map className="h-4 w-4" />
-                      <span className="font-semibold text-xs">TomTom & Mappls APIs</span>
+                      <span className="font-semibold text-xs">Vector Map SDK & Flow APIs</span>
                     </div>
                     <p className="text-[10px] text-slate-400 leading-relaxed">
-                      Live speed-flow telemetry and vector map route detour overlays.
+                      Dynamic maps rendering vector tiles and live speed congestion layers.
                     </p>
-                    <span className="text-[9px] font-mono opacity-60">Traffic Flow / Routing</span>
+                    <span className="text-[9px] font-mono opacity-60">Map SDK & Telemetry APIs</span>
                   </div>
 
-                  {/* Ringg AI Outbound Calling */}
-                  <div className={`p-4 rounded-xl border transition-all duration-300 flex flex-col gap-2 ${
-                    getIsActive("ringg-api")
+                  {/* Telephony Gateway */}
+                  <div className={`p-3 rounded-xl border transition-all duration-300 flex flex-col gap-1.5 ${
+                    getIsActive("telephony-gateway")
                       ? "bg-amber-500/10 border-amber-500 shadow-md shadow-amber-500/5 text-amber-400"
                       : activeScenario 
-                        ? "bg-slate-900/10 border-slate-900/60 text-slate-600 opacity-45"
+                        ? "bg-slate-900/10 border-slate-900/60 text-slate-650 opacity-45"
                         : "bg-slate-900/40 border-slate-800 text-slate-200"
                   }`}>
                     <div className="flex items-center gap-2">
                       <PhoneCall className="h-4 w-4" />
-                      <span className="font-semibold text-xs">Ringg AI Outbound Call</span>
+                      <span className="font-semibold text-xs">Voice Telephony Gateway</span>
                     </div>
                     <p className="text-[10px] text-slate-400 leading-relaxed">
-                      Converts operational dashboard alerts into live dispatcher calls to officers.
+                      Dials patrol officer mobiles, playing structured alert speech.
                     </p>
-                    <span className="text-[9px] font-mono opacity-60">Outbound call dispatch</span>
+                    <span className="text-[9px] font-mono opacity-60">Outbound Telephony API</span>
                   </div>
 
+                  {/* Agentic LLM Orchestrator */}
+                  <div className={`p-3 rounded-xl border transition-all duration-300 flex flex-col gap-1.5 ${
+                    getIsActive("agentic-llm")
+                      ? "bg-amber-500/10 border-amber-500 shadow-md shadow-amber-500/5 text-amber-400"
+                      : activeScenario 
+                        ? "bg-slate-900/10 border-slate-900/60 text-slate-650 opacity-45"
+                        : "bg-slate-900/40 border-slate-800 text-slate-200"
+                  }`}>
+                    <div className="flex items-center gap-2">
+                      <Radio className="h-4 w-4" />
+                      <span className="font-semibold text-xs">Multi-Agent LLM Solver</span>
+                    </div>
+                    <p className="text-[10px] text-slate-400 leading-relaxed">
+                      Collaborative LLM agents resolving complex traffic logs.
+                    </p>
+                    <span className="text-[9px] font-mono opacity-60">LLM Multi-Agent System</span>
+                  </div>
                 </div>
 
               </div>
@@ -779,16 +860,16 @@ export default function ArchitecturePage() {
               {
                 layer: "State Management",
                 stack: "Zustand Client Stores (Police, Violation, Citizen, Voice)",
-                highlight: "Hydrates FastAPI payload contracts and maps snake_case DB models to camelCase fields."
+                highlight: "Hydrates backend payloads and maps snake_case DB models to camelCase fields."
               },
               {
                 layer: "Backend & Ingestion",
-                stack: "Python FastAPI, Uvicorn, Pydantic, PyMongo Atlas driver",
+                stack: "Python FastAPI, Uvicorn, Pydantic, PyMongo drivers",
                 highlight: "CORS configured, high-throughput asynchronous execution, static evidence storage."
               },
               {
                 layer: "Databases & ML Models",
-                stack: "MongoDB Atlas Cloud, scikit-learn Models (DBSCAN + Random Forest Regression)",
+                stack: "Cloud NoSQL Database, scikit-learn Models (DBSCAN + Random Forest Regression)",
                 highlight: "DBSCAN clusters spatial coordinates; Random Forest predicts traffic delay."
               }
             ].map((item, idx) => (
@@ -871,36 +952,39 @@ const MERMAID_CODE = `flowchart TB
 
     %% Ingestion Layer
     subgraph Ingestion ["Ingestion & Edge Layer"]
-        CCTV["AI Camera Feed<br/>(Stationary detection)"]:::ingest
-        Citizen["Citizen Reports<br/>(Advisory portal)"]:::ingest
-        Logs["CSV Offence Logs<br/>(298k+ records)"]:::ingest
+        CCTV["Edge AI CCTV Feed<br/>(Stationary detection)"]:::ingest
+        Citizen["Citizen Portal / Form<br/>(Advisory portal)"]:::ingest
+        Drone["Drone Flight Simulator<br/>(Aerial verification)"]:::ingest
+        Signals["Smart Light Signals<br/>(Junction telemetry)"]:::ingest
+        Logs["Historical Offence Logs<br/>(298k+ records)"]:::ingest
     end
 
     %% Application & API Layer
     subgraph Orchestration ["Orchestration & API Layer"]
-        FastAPI["FastAPI ML Service<br/>(Python/Uvicorn)"]:::routing
-        NextAPI["Next.js API Routes<br/>(Outbound calls)"]:::routing
+        FastAPI["REST API Engine<br/>(Python/FastAPI)"]:::routing
+        NextAPI["Next.js Server API Routes<br/>(Telephony Webhooks)"]:::routing
+        VoiceAgent["Intelligent Voice Agent<br/>(Speech-to-Action Parser)"]:::routing
+        Playground["Prompt Playground<br/>(Config panel)"]:::routing
     end
 
     %% Intelligence Layer
     subgraph Engine ["Analytics & Machine Learning Engine"]
-        DBSCAN["DBSCAN Hotspots<br/>(Clustering pickle)"]:::model
-        RFModel["Random Forest ML<br/>(Congestion impact)"]:::model
-        Router["Patrol Optimizer<br/>(Priority-based cost)"]:::model
+        DBSCAN["ML Model Core<br/>(DBSCAN Clustering)"]:::model
+        RFModel["ML Model Core<br/>(Random Forest Regressor)"]:::model
+        LLMOrch["Multi-Agent LLM Solver<br/>(Collaborative solvers)"]:::model
     end
 
     %% Data & Third-party integrations
     subgraph Storage ["Datastores & Third-Party APIs"]
-        Atlas["MongoDB Atlas<br/>(violations collection)"]:::db
-        LiveTraffic["TomTom Traffic API<br/>(Live flow & speed)"]:::db
-        RinggAI["Ringg AI Call API<br/>(Voice dispatcher)"]:::db
+        Atlas["Cloud NoSQL Database<br/>(NoSQL Document Store)"]:::db
+        LiveTraffic["Vector Map SDK & Flow APIs<br/>(Map SDK & Flow Telemetry)"]:::db
+        Telephony["Voice Telephony Gateway<br/>(Outbound Telephony API)"]:::db
     end
 
     %% Client Presentation Layer
     subgraph Clients ["Operational Interfaces (Next.js)"]
-        Dashboard["Police Dashboard<br/>(Case validation queue)"]:::client
-        PublicView["Citizen Portal<br/>(Detour advisory /citizen)"]:::client
-        VoiceAgent["Voice Assistant<br/>(Floating command agent)"]:::client
+        Dashboard["Next.js Client App<br/>(Zustand Stores)"]:::client
+        PublicView["Citizen Portal / Form<br/>(Detour advisory /citizen)"]:::client
     end
 
     %% Connections
@@ -908,19 +992,23 @@ const MERMAID_CODE = `flowchart TB
     IngestionAPI --> FastAPI
     Citizen --> PublicView
     PublicView --> NextAPI
+    Drone --> FastAPI
+    Signals --> FastAPI
     Logs --> FastAPI
 
     FastAPI --> Atlas
     FastAPI --> DBSCAN
     FastAPI --> RFModel
-    FastAPI --> Router
+    FastAPI --> LLMOrch
 
     RFModel --> LiveTraffic
-    Router --> LiveTraffic
+    LLMOrch --> Atlas
 
     Dashboard --> FastAPI
     PublicView --> FastAPI
     VoiceAgent --> NextAPI
-    NextAPI --> RinggAI
+    NextAPI --> Telephony
+    Playground --> FastAPI
+    Playground --> LLMOrch
 
     Dashboard <--> VoiceAgent`;
