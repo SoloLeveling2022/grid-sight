@@ -22,17 +22,16 @@ import {
   TrendingUp,
   Map,
   Shield,
-  HelpCircle
+  HelpCircle,
+  Award,
+  Zap,
+  BarChart3
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-// Color maps for active states
-interface HighlightedNode {
-  [key: string]: boolean;
-}
-
 interface Scenario {
   id: string;
+  category: "core" | "usp" | "innovative" | "operations";
   title: string;
   description: string;
   steps: string[];
@@ -41,70 +40,263 @@ interface Scenario {
 }
 
 const SCENARIOS: Scenario[] = [
+  // ─── Core Features ──────────────────────────────────────────────────────────
   {
-    id: "camera",
-    title: "1. Edge AI Camera Ingestion Flow",
-    description: "How roadside CCTV cameras automatically detect violations and feed them into the police queue.",
+    id: "mappls-map",
+    category: "core",
+    title: "Mappls SDK Map Integration",
+    description: "High-performance vector map layer mapping coordinate markers, circular density hotspots, and routing paths.",
     steps: [
-      "Operator draws a virtual 'no-parking' polygon over a high-incident corridor on the map.",
-      "The CCTV feed monitors the area and tracks stationary vehicles within the polygon.",
-      "Once stationary time exceeds 10 seconds, a violation is detected.",
-      "CCTV Simulator POSTs the details (camera ID, coordinate polygon, evidence image) to `/api/violations/detect-parking`.",
-      "FastAPI backend saves the evidence to storage (local/S3) and inserts the record into MongoDB Atlas with 'pending' validation status.",
-      "The Police Dashboard validation queue automatically updates, highlighting the new case for inspection."
+      "Next.js components mount the map canvas using a unified vector map container.",
+      "The SDK loader requests tiles and segment layers, dropping back to a custom styled SVG fallback grid if offline.",
+      "Map queries active violation density points and registers TomTom incidents overlays.",
+      "Marker sizes and route lines are plotted dynamically using geo-coordinates from Zustand store."
+    ],
+    activeNodes: ["dashboard", "traffic-api"],
+    techNotes: "File: mappls-sdk.ts | Key: NEXT_PUBLIC_MAPPLS_API_KEY (TomTom redirection)"
+  },
+  {
+    id: "validation-queue",
+    category: "core",
+    title: "Unified Case Validation Queue",
+    description: "中央 control room dashboard queue where operators filter, batch-select, and validate tickets.",
+    steps: [
+      "Operator inputs plates, filters by station/junction, or selects validation status (e.g. pending).",
+      "Next.js fetches paginated search metrics from FastAPI backend routes.",
+      "Operator selects cases in batch and clicks Approve, Reject, or Flag Duplicate.",
+      "FastAPI updates validation status and timestamps on MongoDB Atlas, returning write confirmations.",
+      "Zustand updates the local queue list states optimistically."
+    ],
+    activeNodes: ["dashboard", "fastapi", "mongodb"],
+    techNotes: "Endpoints: GET /api/violations/search | POST /api/violations/{id}/validate"
+  },
+  {
+    id: "citizen-reports",
+    category: "core",
+    title: "Citizen Obstruction Reporting",
+    description: "Citizen portal allowing the public to report roadside obstructions and track plate validation states.",
+    steps: [
+      "Citizen enters plate details, location names, coordinates, and uploads an image of the obstruction.",
+      "Citizen store captures inputs locally and handles state mapping.",
+      "Submits a payload with Base64 image data to the FastAPI ingestion route.",
+      "FastAPI saves the image in local static storage (or S3) and creates a public evidence link.",
+      "Saves a new case record on MongoDB Atlas with validation_status = pending."
+    ],
+    activeNodes: ["citizen", "fastapi", "mongodb"],
+    techNotes: "Endpoints: POST /api/violations/ingest | File: storage.py"
+  },
+  {
+    id: "camera-simulator",
+    category: "core",
+    title: "Polygon Editor & AI Camera Simulator",
+    description: "Interactive polygon coordinate editor running stationary checks inside edge AI zones.",
+    steps: [
+      "Operator selects a corridor and draws a virtual no-parking boundary polygon on the map canvas.",
+      "Saves polygon vertices under cameraZones[junctionName] in Zustand.",
+      "Operator launches CCTV Simulator which tracks vehicle centroid coordinates across frames.",
+      "Simulator sends vertices, coordinates, and frames indices to FastAPI.",
+      "FastAPI runs a Ray Casting point-in-polygon algorithm. If a vehicle remains inside the polygon for >= 10 seconds, it ingests a wrong-parking ticket."
     ],
     activeNodes: ["camera", "fastapi", "mongodb", "dashboard"],
-    techNotes: "FastAPI endpoint: /api/violations/detect-parking | Data model status: 'pending'"
+    techNotes: "Endpoints: POST /api/violations/detect-parking | Ray-Casting check in violations.py"
   },
+  
+  // ─── USPs ──────────────────────────────────────────────────────────────────
   {
-    id: "ml-impact",
-    title: "2. Congestion Impact Inference Flow",
-    description: "Quantifying how much delay a parking violation is actually causing to current traffic flow.",
+    id: "congestion-ml",
+    category: "usp",
+    title: "Congestion Impact Quantification",
+    description: "Random Forest ML models calculating delay times and blending them with live flow telemetry.",
     steps: [
-      "Operator clicks on an active violation from the pending list.",
-      "Dashboard triggers a POST request to FastAPI endpoint `/api/ml/predict-impact`.",
-      "FastAPI loads a pre-trained scikit-learn Random Forest model (congestion_model.pkl).",
-      "The backend queries live speed/flow telemetry at coordinates using the TomTom Traffic API.",
-      "FastAPI blends historical ML predictions (40%) and live speed-drop data (60%) to compute traffic indicators.",
-      "Response returns exact delay in minutes, expected speed drop, congestion score, and dispatch recommendation."
+      "Operator selects a violation case in the queue sidebar.",
+      "Dashboard POSTs lat, lng, time, and vehicle metadata to the ML route.",
+      "FastAPI loads a pre-trained scikit-learn Random Forest model to predict delay minutes.",
+      "Queries TomTom Traffic Flow APIs to evaluate free-flow vs. current speeds at coordinates.",
+      "Blends historical ML model prediction (40%) and live telemetry speed drops (60%) to return expected delay, speed loss, and congestion score."
     ],
     activeNodes: ["dashboard", "fastapi", "ml-models", "traffic-api"],
-    techNotes: "Model: Random Forest Regression (congestion_model.pkl) blended with live speed flow telemetry."
+    techNotes: "Endpoints: POST /api/ml/predict-impact | Model: congestion_model.pkl"
   },
   {
-    id: "routing",
-    title: "3. Smart Patrol Route Dispatch Flow",
-    description: "Optimizing the path police officers take to clear the maximum traffic delay.",
+    id: "outcome-loop",
+    category: "usp",
+    title: "Enforcement Outcomes Feedback Loop",
+    description: "Dynamic simulation reflecting patrol resolutions by reducing map weights and delays by 85%.",
     steps: [
-      "Operator requests patrol routing optimization from the dashboard or via voice agent command.",
-      "Next.js queries FastAPI endpoint `/api/ml/enforcement-priorities`.",
-      "FastAPI calculates a multi-factor priority score combining violation density (DBSCAN), expected delay, sensitive spots, and time of day.",
-      "Backend runs a routing heuristic (TSP variant) starting from the highest priority hotspot.",
-      "Cost function balances geographical distance against priority score and open incident workload.",
-      "The optimal waypoints and path lines are rendered as a custom detour overlay on the live police map."
+      "A severe-priority hotspot shows high congestion weight on the dashboard.",
+      "Operator dispatches a patrol unit (state moves: NoPatrol -> Dispatched).",
+      "Operator logs citation action on location (state moves: Dispatched -> ActionTaken).",
+      "Operator closes the case (state moves: ActionTaken -> Closed).",
+      "Zustand updates local scores: scales expected delay by 0.15 (85% reduction) and updates priority to low, which dynamically changes the heatmap color."
     ],
-    activeNodes: ["dashboard", "voice-ui", "fastapi", "ml-models", "mongodb", "maps-sdk"],
-    techNotes: "DBSCAN Centroid Clustering (hotspot_clustering.pkl) + Haversine TSP Route Heuristic."
+    activeNodes: ["dashboard", "mongodb"],
+    techNotes: "State machine managed in Zustand store: useViolationPoliceStore"
   },
   {
-    id: "voice-call",
-    title: "4. Outbound AI Call Dispatcher Flow",
-    description: "Connecting digital analytics to field action by calling patrolling officers.",
+    id: "mongo-atlas",
+    category: "usp",
+    title: "MongoDB Atlas Cloud Integration",
+    description: "High-throughput cloud database replacing local SQLite to run complex aggregations on 298k+ records.",
     steps: [
-      "Operator selects a hotspot and triggers the Call Dispatcher from the floating Voice Agent.",
-      "The Voice UI triggers a POST request to Next.js API route `/api/voice/call`.",
-      "Next.js API formats the context (officer role, location name, obstruction description) and triggers Ringg AI Outbound Call API.",
-      "Ringg AI calls the officer, delivers the dispatch summary, and records feedback.",
-      "Next.js polls `/api/voice/call/status` to grab live ringing, talking, and transcription events.",
-      "The final call transcription is synced back to the dashboard chat history for validation auditing."
+      "FastAPI backend launches and reads DATABASE_URL credentials.",
+      "database.py initializes a native MongoClient using secure TLS and pings the DB.",
+      "API queries are processed directly on Atlas utilizing MongoDB aggregations.",
+      "Pipelines use allowDiskUse=True to efficiently analyze and aggregate 298k+ records."
+    ],
+    activeNodes: ["fastapi", "mongodb"],
+    techNotes: "File: database.py | Client driver: PyMongo (MongoClient with TLS)"
+  },
+
+  // ─── Innovative Features ──────────────────────────────────────────────────
+  {
+    id: "dbscan-clustering",
+    category: "innovative",
+    title: "DBSCAN Spatial Hotspot Clustering",
+    description: "Pickled DBSCAN clustering models grouping coordinate densities into weighted hotspots.",
+    steps: [
+      "FastAPI initializes and loads hotspot_clustering.pkl containing DBSCAN centroid coordinates.",
+      "Groups coordinate densities into hotspot clusters (200m radius threshold).",
+      "Enriches centroids with case count, unique plates, peak hours, and sensitive place proximities.",
+      "Client queries hotspots list, mapping database models into coordinate markers."
+    ],
+    activeNodes: ["fastapi", "ml-models", "mongodb", "dashboard"],
+    techNotes: "Endpoints: GET /api/ml/hotspots | Model: hotspot_clustering.pkl"
+  },
+  {
+    id: "priority-scoring",
+    category: "innovative",
+    title: "Multi-Factor Priority Scoring",
+    description: "Enforcement prioritizer calculating index scores based on density, delay, repeat plate count, and school zones.",
+    steps: [
+      "Backend queries MongoDB to fetch active violation coordinates.",
+      "Calculates priority index based on density, delay minutes, and repeat plate metrics.",
+      "Scans local database strings for sensitive zone keywords (school, hospital, metro, bus stop) to apply severe boosts.",
+      "Returns ranked items categorized by priority levels (Low, Medium, High, Severe)."
+    ],
+    activeNodes: ["fastapi", "mongodb", "dashboard"],
+    techNotes: "Endpoints: GET /api/ml/enforcement-priorities | Formula weights: density, delay, repeat offenders, zones"
+  },
+  {
+    id: "weighted-heatmap",
+    category: "innovative",
+    title: "Real Weighted Heatmap Layer",
+    description: "Map overlay displaying coordinate density weights mapped to expected traffic delays.",
+    steps: [
+      "Frontend maps read violation coordinates from the hotspot endpoint.",
+      "Each point is assigned a weight: w = violationCount * congestionScore.",
+      "Weights are passed to the map canvas heatmap layer.",
+      "Renders color gradients (Red = high delay impact, Green = low).",
+      "Dropdown selections (time of day, station) dynamically filter the dataset, redrawing the heatmap."
+    ],
+    activeNodes: ["dashboard", "traffic-api"],
+    techNotes: "Weight Formula: incidentCount * congestionScore | Rendered in gridsight-map.tsx"
+  },
+  {
+    id: "patrol-routing",
+    category: "innovative",
+    title: "Optimized Patrol Routing TSP Heuristic",
+    description: "TSP heuristic solving routing paths starting from highest priority waypoint with priority cost discount.",
+    steps: [
+      "Operator requests a patrol route from the dashboard.",
+      "FastAPI fetches highest-ranked enforcement coordinates.",
+      "A TSP heuristic calculates distance vectors between coordinates using Haversine.",
+      "Cost function discounts distances if adjacent waypoints have severe priority scores or high open case counts.",
+      "Paths are drawn on the vector map as a blue route line."
+    ],
+    activeNodes: ["dashboard", "fastapi", "ml-models", "traffic-api"],
+    techNotes: "Endpoints: GET /api/ml/patrol-route | Heuristic: Haversine TSP Route Heuristic"
+  },
+
+  // ─── Operations & Analytics ────────────────────────────────────────────────
+  {
+    id: "recidivism-analytics",
+    category: "operations",
+    title: "Recidivism plate Analytics",
+    description: "Enforcement scoring engine grouping case frequencies and locations per vehicle number.",
+    steps: [
+      "Operator selects the 'Offenders' analytics tab on the dashboard.",
+      "FastAPI aggregates MongoDB records grouping by vehicle_number.",
+      "Calculates an individual Enforcement Score based on infraction frequency, severity boosts (footpath/double parking), and station diversity.",
+      "Returns records sorted by Enforcement Score, allowing operators to click any plate to filter their exact cases on the map."
+    ],
+    activeNodes: ["dashboard", "fastapi", "mongodb"],
+    techNotes: "Endpoints: GET /api/violations/repeat-offenders | Score: count*12 + severity*20 + stations*6"
+  },
+  {
+    id: "device-productivity",
+    category: "operations",
+    title: "Device Productivity Analytics",
+    description: "Aggregation metrics tracking capture approvals, rejections, and sensor rates.",
+    steps: [
+      "Client requests device statistics.",
+      "FastAPI groups documents by device_id.",
+      "Calculates total captures, approval rates, and rejection rates.",
+      "Displays analytics on the dashboard to audit sensor health and productivity."
+    ],
+    activeNodes: ["dashboard", "fastapi", "mongodb"],
+    techNotes: "Endpoints: GET /api/violations/device-productivity"
+  },
+  {
+    id: "hotspot-inspector",
+    category: "operations",
+    title: "Interactive Hotspot Inspector",
+    description: "Sidebar inspector mounting unique vehicle stats, peak hours, and dispatch triggers on map clicks.",
+    steps: [
+      "Operator clicks a hotspot node on the map or rankings list.",
+      "The click handler triggers the selector, storing the name in Zustand.",
+      "The Sidebar details component mounts, displaying unique vehicles, peak hours, sensitive zones, and expected delay.",
+      "Action buttons (Dispatch Patrol, Outbound Call) focus on the chosen coordinate context."
+    ],
+    activeNodes: ["dashboard"],
+    techNotes: "Files: src/components/dashboard/ priority lists & maps selection listeners"
+  },
+  {
+    id: "alternate-routing",
+    category: "operations",
+    title: "Alternate Route Detour Planner",
+    description: "Citizen routing overlay displaying detours bypassing high-priority enforcement zones.",
+    steps: [
+      "Citizen enters Origin and Destination locations.",
+      "Zustand citizen store requests enforcement priorities to find active hotspots.",
+      "The router traces the primary path and calculates detour paths avoiding the highest-ranked hotspot.",
+      "Renders the standard route in red (incident warning) and the detour route in green (safety advice) on the map."
+    ],
+    activeNodes: ["citizen", "dashboard", "traffic-api"],
+    techNotes: "Files: src/app/citizen/page.tsx routing advisory simulator"
+  },
+  {
+    id: "voice-commands",
+    category: "operations",
+    title: "Intelligent Voice Agent UI",
+    description: "Floating voice agent parsing spoken intents and triggering Zustand store updates.",
+    steps: [
+      "Operator speaks a command or types into the voice input field.",
+      "Sends query to the Next.js API route to identify command intent.",
+      "Voice store receives the intent response and triggers the matching reducer (e.g. setCaseFilter).",
+      "Zustand updates the UI state (e.g. centers map, validates tickets, generates route), playing spoken text-to-speech confirmation."
+    ],
+    activeNodes: ["voice-ui", "next-api", "dashboard"],
+    techNotes: "Endpoints: POST /api/voice/command | Session: POST /api/voice/session"
+  },
+  {
+    id: "call-dispatcher",
+    category: "operations",
+    title: "Outbound Call AI Dispatcher",
+    description: "Outbound dispatch engine using Ringg AI voice calls to alert field officers with live status logs.",
+    steps: [
+      "Operator triggers call dispatcher from the voice agent drawer.",
+      "Next.js endpoint constructs a text summary of the hotspot violation.",
+      "POSTs to Ringg AI API which makes a real-world outbound phone call to the field officer.",
+      "Dashboard polls call/status to show call states. Once ended, the text transcript is appended to the console logs."
     ],
     activeNodes: ["voice-ui", "next-api", "ringg-api"],
-    techNotes: "Outbound Call Service: Ringg AI Voice Agent API Integration with live status polling."
+    techNotes: "Endpoints: POST /api/voice/call | GET /api/voice/call/status"
   }
 ];
 
 export default function ArchitecturePage() {
   const [activeScenario, setActiveScenario] = useState<string | null>(null);
+  const [categoryFilter, setCategoryFilter] = useState<"all" | "core" | "usp" | "innovative" | "operations">("all");
   const [copied, setCopied] = useState(false);
 
   const getIsActive = (nodeId: string) => {
@@ -118,6 +310,10 @@ export default function ArchitecturePage() {
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
+
+  const filteredScenarios = SCENARIOS.filter(
+    (s) => categoryFilter === "all" || s.category === categoryFilter
+  );
 
   return (
     <div className="min-h-screen bg-[#070b14] text-slate-100 relative antialiased pb-20">
@@ -168,7 +364,7 @@ export default function ArchitecturePage() {
             System Architecture
           </h1>
           <p className="text-slate-400 text-base md:text-lg">
-            High-throughput analytics, machine learning predictive models, and voice operations engineered for Bengaluru Traffic Police.
+            Complete data flow mapping of GridSight's 17 features: Ingestion, machine learning inference, MongoDB Cloud scaling, and voice dispatch.
           </p>
         </div>
 
@@ -177,41 +373,60 @@ export default function ArchitecturePage() {
           {/* Left panel: Scenario selector */}
           <div className="lg:col-span-4 flex flex-col gap-4">
             <div className="rounded-xl border border-slate-800/80 bg-slate-900/25 p-5 backdrop-blur-sm">
-              <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+              <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-2">
                 <Activity className="h-4 w-4 text-amber-500 animate-pulse" />
-                Select In-App Flow Scenario
+                Select System Feature
               </h2>
               <p className="text-xs text-slate-500 mb-4 leading-relaxed">
-                Click on a scenario below to trace and highlight the active data paths and microservice components in the architecture layout.
+                Choose a category and select any of the 17 features to view its database flow paths and specs:
               </p>
 
-              <div className="flex flex-col gap-2">
-                {SCENARIOS.map((scen) => (
+              {/* Category tabs */}
+              <div className="grid grid-cols-2 gap-1.5 mb-4">
+                {[
+                  { id: "all", label: "All (17)" },
+                  { id: "core", label: "Core" },
+                  { id: "usp", label: "USPs" },
+                  { id: "innovative", label: "Innovative" },
+                  { id: "operations", label: "Ops/Voice" }
+                ].map((cat) => (
+                  <button
+                    key={cat.id}
+                    onClick={() => {
+                      setCategoryFilter(cat.id as any);
+                      setActiveScenario(null);
+                    }}
+                    className={`px-2 py-1 text-[11px] rounded-md border font-medium cursor-pointer text-center transition-all ${
+                      categoryFilter === cat.id
+                        ? "bg-amber-500/20 border-amber-500/40 text-amber-400"
+                        : "bg-slate-900/60 border-slate-850 text-slate-400 hover:border-slate-700"
+                    }`}
+                  >
+                    {cat.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Feature buttons */}
+              <div className="flex flex-col gap-2 max-h-[320px] overflow-y-auto pr-1 scrollbar-thin">
+                {filteredScenarios.map((scen) => (
                   <button
                     key={scen.id}
                     onClick={() => setActiveScenario(activeScenario === scen.id ? null : scen.id)}
-                    className={`w-full text-left p-3.5 rounded-lg border transition-all duration-300 text-sm cursor-pointer relative overflow-hidden ${
+                    className={`w-full text-left p-3 rounded-lg border transition-all duration-300 text-xs cursor-pointer relative overflow-hidden ${
                       activeScenario === scen.id
-                        ? "bg-amber-500/10 border-amber-500/40 text-amber-400 font-semibold"
+                        ? "bg-amber-500/10 border-amber-500/40 text-amber-400 font-semibold shadow-inner"
                         : "bg-slate-900/40 border-slate-800 hover:border-slate-700 text-slate-300 hover:bg-slate-900/60"
                     }`}
                   >
                     <div className="flex justify-between items-center">
-                      <span>{scen.title.split(" - ")[0]}</span>
-                      <ChevronRight className={`h-4 w-4 transition-transform duration-300 ${
+                      <span className="truncate pr-2">{scen.title}</span>
+                      <ChevronRight className={`h-3 w-3 shrink-0 transition-transform duration-300 ${
                         activeScenario === scen.id ? "rotate-90 text-amber-400" : "text-slate-500"
                       }`} />
                     </div>
                   </button>
                 ))}
-                {activeScenario && (
-                  <button
-                    onClick={() => setActiveScenario(null)}
-                    className="mt-2 text-center text-xs text-slate-500 hover:text-amber-400 transition-colors py-1 underline cursor-pointer"
-                  >
-                    Clear scenario filters
-                  </button>
-                )}
               </div>
             </div>
 
@@ -224,21 +439,24 @@ export default function ArchitecturePage() {
                   return (
                     <>
                       <div className="flex items-center gap-2 mb-2">
-                        <span className="px-2 py-0.5 rounded bg-amber-500/20 text-[10px] text-amber-400 uppercase tracking-widest font-semibold border border-amber-500/30">
-                          Active Path
+                        <span className="px-2 py-0.5 rounded bg-amber-500/20 text-[9px] text-amber-400 uppercase tracking-widest font-semibold border border-amber-500/30">
+                          Data Pathway
                         </span>
-                        <span className="text-[11px] text-slate-500 font-mono">{scen.techNotes}</span>
                       </div>
                       <p className="text-xs text-slate-400 mb-4 font-medium italic">
                         {scen.description}
                       </p>
-                      <ol className="list-decimal list-outside pl-4 space-y-3">
+                      <ol className="list-decimal list-outside pl-4 space-y-3 mb-4">
                         {scen.steps.map((step, idx) => (
-                          <li key={idx} className="text-xs text-slate-300 leading-relaxed pl-1">
+                          <li key={idx} className="text-[11px] text-slate-300 leading-relaxed pl-1">
                             {step}
                           </li>
                         ))}
                       </ol>
+                      <div className="border-t border-slate-800 pt-3 text-[10px] text-slate-400 font-mono flex flex-col gap-1">
+                        <span className="text-amber-500 uppercase tracking-wider text-[8px] font-bold">Specs / Files</span>
+                        <span className="break-all">{scen.techNotes}</span>
+                      </div>
                     </>
                   );
                 })()}
@@ -271,7 +489,7 @@ export default function ArchitecturePage() {
                     getIsActive("camera")
                       ? "bg-amber-500/10 border-amber-500 shadow-md shadow-amber-500/5 text-amber-400"
                       : activeScenario 
-                        ? "bg-slate-900/10 border-slate-900/60 text-slate-600 opacity-40"
+                        ? "bg-slate-900/10 border-slate-900/60 text-slate-600 opacity-45"
                         : "bg-slate-900/40 border-slate-800 text-slate-200"
                   }`}>
                     <div className="flex items-center gap-2">
@@ -289,7 +507,7 @@ export default function ArchitecturePage() {
                     getIsActive("citizen")
                       ? "bg-amber-500/10 border-amber-500 shadow-md shadow-amber-500/5 text-amber-400"
                       : activeScenario 
-                        ? "bg-slate-900/10 border-slate-900/60 text-slate-600 opacity-40"
+                        ? "bg-slate-900/10 border-slate-900/60 text-slate-600 opacity-45"
                         : "bg-slate-900/40 border-slate-800 text-slate-200"
                   }`}>
                     <div className="flex items-center gap-2">
@@ -307,7 +525,7 @@ export default function ArchitecturePage() {
                     getIsActive("logs")
                       ? "bg-amber-500/10 border-amber-500 shadow-md shadow-amber-500/5 text-amber-400"
                       : activeScenario 
-                        ? "bg-slate-900/10 border-slate-900/60 text-slate-600 opacity-40"
+                        ? "bg-slate-900/10 border-slate-900/60 text-slate-600 opacity-45"
                         : "bg-slate-900/40 border-slate-800 text-slate-200"
                   }`}>
                     <div className="flex items-center gap-2">
@@ -332,7 +550,7 @@ export default function ArchitecturePage() {
                     getIsActive("dashboard")
                       ? "bg-amber-500/10 border-amber-500 shadow-md shadow-amber-500/5 text-amber-400"
                       : activeScenario 
-                        ? "bg-slate-900/10 border-slate-900/60 text-slate-600 opacity-40"
+                        ? "bg-slate-900/10 border-slate-900/60 text-slate-600 opacity-45"
                         : "bg-slate-900/40 border-slate-800 text-slate-200"
                   }`}>
                     <div className="flex items-center gap-2">
@@ -350,7 +568,7 @@ export default function ArchitecturePage() {
                     getIsActive("fastapi")
                       ? "bg-amber-500/10 border-amber-500 shadow-md shadow-amber-500/5 text-amber-400"
                       : activeScenario 
-                        ? "bg-slate-900/10 border-slate-900/60 text-slate-600 opacity-40"
+                        ? "bg-slate-900/10 border-slate-900/60 text-slate-600 opacity-45"
                         : "bg-slate-900/40 border-slate-800 text-slate-200"
                   }`}>
                     <div className="flex items-center gap-2">
@@ -368,7 +586,7 @@ export default function ArchitecturePage() {
                     getIsActive("next-api")
                       ? "bg-amber-500/10 border-amber-500 shadow-md shadow-amber-500/5 text-amber-400"
                       : activeScenario 
-                        ? "bg-slate-900/10 border-slate-900/60 text-slate-600 opacity-40"
+                        ? "bg-slate-900/10 border-slate-900/60 text-slate-600 opacity-45"
                         : "bg-slate-900/40 border-slate-800 text-slate-200"
                   }`}>
                     <div className="flex items-center gap-2">
@@ -386,7 +604,7 @@ export default function ArchitecturePage() {
                     getIsActive("voice-ui")
                       ? "bg-amber-500/10 border-amber-500 shadow-md shadow-amber-500/5 text-amber-400"
                       : activeScenario 
-                        ? "bg-slate-900/10 border-slate-900/60 text-slate-600 opacity-40"
+                        ? "bg-slate-900/10 border-slate-900/60 text-slate-600 opacity-45"
                         : "bg-slate-900/40 border-slate-800 text-slate-200"
                   }`}>
                     <div className="flex items-center gap-2">
@@ -411,7 +629,7 @@ export default function ArchitecturePage() {
                     getIsActive("mongodb")
                       ? "bg-amber-500/10 border-amber-500 shadow-md shadow-amber-500/5 text-amber-400"
                       : activeScenario 
-                        ? "bg-slate-900/10 border-slate-900/60 text-slate-600 opacity-40"
+                        ? "bg-slate-900/10 border-slate-900/60 text-slate-600 opacity-45"
                         : "bg-slate-900/40 border-slate-800 text-slate-200"
                   }`}>
                     <div className="flex items-center gap-2">
@@ -429,7 +647,7 @@ export default function ArchitecturePage() {
                     getIsActive("ml-models")
                       ? "bg-amber-500/10 border-amber-500 shadow-md shadow-amber-500/5 text-amber-400"
                       : activeScenario 
-                        ? "bg-slate-900/10 border-slate-900/60 text-slate-600 opacity-40"
+                        ? "bg-slate-900/10 border-slate-900/60 text-slate-600 opacity-45"
                         : "bg-slate-900/40 border-slate-800 text-slate-200"
                   }`}>
                     <div className="flex items-center gap-2">
@@ -447,7 +665,7 @@ export default function ArchitecturePage() {
                     getIsActive("traffic-api") || getIsActive("maps-sdk")
                       ? "bg-amber-500/10 border-amber-500 shadow-md shadow-amber-500/5 text-amber-400"
                       : activeScenario 
-                        ? "bg-slate-900/10 border-slate-900/60 text-slate-600 opacity-40"
+                        ? "bg-slate-900/10 border-slate-900/60 text-slate-600 opacity-45"
                         : "bg-slate-900/40 border-slate-800 text-slate-200"
                   }`}>
                     <div className="flex items-center gap-2">
@@ -465,7 +683,7 @@ export default function ArchitecturePage() {
                     getIsActive("ringg-api")
                       ? "bg-amber-500/10 border-amber-500 shadow-md shadow-amber-500/5 text-amber-400"
                       : activeScenario 
-                        ? "bg-slate-900/10 border-slate-900/60 text-slate-600 opacity-40"
+                        ? "bg-slate-900/10 border-slate-900/60 text-slate-600 opacity-45"
                         : "bg-slate-900/40 border-slate-800 text-slate-200"
                   }`}>
                     <div className="flex items-center gap-2">
@@ -486,7 +704,7 @@ export default function ArchitecturePage() {
               {!activeScenario && (
                 <div className="mt-8 text-center text-xs text-slate-500 flex items-center justify-center gap-1">
                   <HelpCircle className="h-3 w-3" />
-                  <span>Tip: Select a scenario in the left panel to trace live data propagation pathways.</span>
+                  <span>Tip: Select a system feature in the left panel to trace live data propagation pathways.</span>
                 </div>
               )}
             </div>
