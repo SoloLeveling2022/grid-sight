@@ -1036,7 +1036,7 @@ export function GridSightMap({
           {mapStatus === "loading" && (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/80 z-20 text-xs text-slate-400 gap-2">
               <div className="h-5 w-5 animate-spin rounded-full border-2 border-amber-500 border-t-transparent" />
-              <span>Initializing TomTom Live Map...</span>
+              <span>Initializing Vector Map SDK...</span>
             </div>
           )}
 
@@ -1044,9 +1044,9 @@ export function GridSightMap({
             <div className="absolute inset-0 flex items-center justify-center bg-slate-950/90 z-20 text-xs text-red-400 p-4 text-center">
               <div className="max-w-xs space-y-3">
                 <AlertTriangle className="h-6 w-6 mx-auto text-red-500 animate-bounce" />
-                <p className="font-semibold text-slate-200">TomTom API Connection Issue</p>
+                <p className="font-semibold text-slate-200">Map API Connection Issue</p>
                 <p className="text-slate-500 text-[10px] leading-relaxed">
-                  Failed to load map style. Please verify that your key in <code className="bg-slate-900 px-1 py-0.5 rounded text-amber-300 font-mono text-[9px]">.env.local</code> is valid.
+                  Failed to load map style. Please verify that your map API credentials in <code className="bg-slate-900 px-1 py-0.5 rounded text-amber-300 font-mono text-[9px]">.env.local</code> are valid.
                 </p>
                 <button
                   type="button"
@@ -1449,7 +1449,7 @@ export function GridSightMap({
 
       {/* Map Attribution */}
       <div className="absolute bottom-2 left-2 z-20 rounded bg-slate-950/80 px-2 py-1 text-[10px] text-slate-500 border border-slate-800 pointer-events-none">
-        {liveMapEnabled && mapStatus === "ready" ? "TomTom Vector SDK" : "GridSight Layout · Live Ready"}
+        {liveMapEnabled && mapStatus === "ready" ? "Vector Map SDK" : "GridSight Layout · Live Ready"}
       </div>
     </div>
   );
