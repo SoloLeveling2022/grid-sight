@@ -693,6 +693,19 @@ interface VoiceState {
   reset: () => void;
 }
 
+const getVoiceHistoryFromCookies = (): Array<{ role: "user" | "assistant"; text: string }> => {
+  if (typeof window === "undefined") return [];
+  const match = document.cookie.match(/gridsight_voice_history=([^;]+)/);
+  if (match) {
+    try {
+      return JSON.parse(decodeURIComponent(match[1]));
+    } catch (_) {
+      return [];
+    }
+  }
+  return [];
+};
+
 export const useVoiceStore = create<VoiceState>((set) => ({
   session: null,
   persona: "police",
@@ -700,7 +713,7 @@ export const useVoiceStore = create<VoiceState>((set) => ({
   isListening: false,
   transcript: "",
   lastResponse: null,
-  history: [],
+  history: getVoiceHistoryFromCookies(),
   setPersona: (persona) => set({ persona }),
   setOpen: (open) => set({ isOpen: open }),
   setListening: (listening) => set({ isListening: listening }),
@@ -708,7 +721,17 @@ export const useVoiceStore = create<VoiceState>((set) => ({
   setTranscript: (text) => set({ transcript: text }),
   setLastResponse: (response) => set({ lastResponse: response }),
   addHistory: (role, text) =>
-    set((s) => ({ history: [...s.history, { role, text }].slice(-20) })),
-  reset: () =>
-    set({ session: null, isListening: false, transcript: "", lastResponse: null, history: [] }),
+    set((s) => {
+      const newHistory = [...s.history, { role, text }].slice(-20);
+      if (typeof window !== "undefined") {
+        document.cookie = `gridsight_voice_history=${encodeURIComponent(JSON.stringify(newHistory))}; path=/; max-age=31536000`;
+      }
+      return { history: newHistory };
+    }),
+  reset: () => {
+    if (typeof window !== "undefined") {
+      document.cookie = `gridsight_voice_history=; path=/; max-age=0`;
+    }
+    set({ session: null, isListening: false, transcript: "", lastResponse: null, history: [] });
+  },
 }));

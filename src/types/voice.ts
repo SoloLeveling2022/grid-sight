@@ -59,7 +59,11 @@ export interface VoiceUIAction {
     | "approve_case"
     | "reject_case"
     | "show_congestion_impact"
-    | "avoid_hotspots_route";
+    | "avoid_hotspots_route"
+    | "quit_agent"
+    | "take_screenshot"
+    | "scroll"
+    | "navigate_section";
   payload: Record<string, unknown>;
 }
 

@@ -19,7 +19,6 @@ import {
   YAxis,
 } from "recharts";
 import { BarChart3, Clock, TrafficCone, Compass } from "lucide-react";
-import { VoiceAgent } from "@/components/voice/voice-agent";
 
 const CAUSE_LABELS: Record<string, string> = {
   vehicle_breakdown: "Breakdown",
@@ -320,8 +319,6 @@ export default function AnalyticsDashboardPage() {
           </CardContent>
         </Card>
       </div>
-
-      <VoiceAgent persona="police" />
     </AppShell>
   );
 }

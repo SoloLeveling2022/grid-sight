@@ -351,6 +351,17 @@ export default function PoliceDashboardPage() {
   const [selectedTimeOfDay, setSelectedTimeOfDay] = useState<string | null>(null);
   const [selectedHotspot, setSelectedHotspot] = useState<any>(null);
 
+  useEffect(() => {
+    const handleSwitch = (e: Event) => {
+      const tab = (e as CustomEvent).detail;
+      if (tab === "cases" || tab === "validation" || tab === "offenders" || tab === "devices") {
+        setActivePanel(tab);
+      }
+    };
+    window.addEventListener("switch-police-tab", handleSwitch);
+    return () => window.removeEventListener("switch-police-tab", handleSwitch);
+  }, []);
+
   const meta = useViolationPoliceStore((s) => s.meta);
   const violationTypes = useViolationPoliceStore((s) => s.violationTypes);
   const stations = useViolationPoliceStore((s) => s.stations);
@@ -546,7 +557,7 @@ export default function PoliceDashboardPage() {
 
       <div className="grid gap-4 lg:grid-cols-12">
         <section className="space-y-4 lg:col-span-8">
-          <Card className="border-slate-800 bg-slate-900/15">
+          <Card id="map-section" className="border-slate-800 bg-slate-900/15">
             <CardHeader className="pb-3">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
@@ -646,7 +657,7 @@ export default function PoliceDashboardPage() {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card id="cases-section">
             <CardHeader>
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
@@ -977,7 +988,7 @@ export default function PoliceDashboardPage() {
                 </div>
 
                 {/* CCTV Camera Feed Simulator & Zone Setup */}
-                <div className="border-t border-slate-800/80 pt-3 space-y-2">
+                <div id="cctv-section" className="border-t border-slate-800/80 pt-3 space-y-2">
                   <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400">CCTV AI Camera & Zone Setup</span>
                   <div className="rounded-lg border border-slate-800 bg-[#070b14]/50 p-2.5 space-y-2 text-xs">
                     <div className="flex justify-between items-center">
@@ -1126,7 +1137,7 @@ export default function PoliceDashboardPage() {
             </Card>
           )}
 
-          <Card className="border-amber-500/20 bg-amber-500/5">
+          <Card id="performance-section" className="border-amber-500/20 bg-amber-500/5">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Siren className="h-4 w-4 text-amber-400 animate-pulse" />
@@ -1250,7 +1261,6 @@ export default function PoliceDashboardPage() {
         </aside>
       </div>
 
-      <VoiceAgent persona="police" />
 
       {/* Lightbox Zoom Overlay Modal */}
       {zoomedImage && (

@@ -8,6 +8,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useVoiceStore } from "@/store";
 import { usePoliceStore, useCitizenStore, useViolationPoliceStore } from "@/store";
 import type { VoicePersona } from "@/types/voice";
+import { useRouter, usePathname } from "next/navigation";
+import { cn } from "@/lib/utils";
 
 const POLICE_PROMPTS = [
   "Generate patrol route",
@@ -32,6 +34,8 @@ interface VoiceAgentProps {
 }
 
 export function VoiceAgent({ persona }: VoiceAgentProps) {
+  const router = useRouter();
+  const pathname = usePathname();
   const { isOpen, setOpen, isListening, setListening, history, addHistory, setLastResponse, setSession, session } =
     useVoiceStore();
   const setSelectedCorridor = usePoliceStore((s) => s.setSelectedCorridor);
@@ -199,6 +203,119 @@ export function VoiceAgent({ persona }: VoiceAgentProps) {
     }
   }
 
+  async function executeUiActions(uiActions: Array<any>) {
+    for (const action of uiActions ?? []) {
+      if (action.type === "filter_corridor" && action.payload.corridor) {
+        setSelectedCorridor(String(action.payload.corridor));
+      }
+      if (action.type === "show_alternate_route") {
+        setAlternateRoute({
+          from: String(action.payload.from ?? ""),
+          to: String(action.payload.to ?? ""),
+          via: String(action.payload.via ?? ""),
+        });
+      }
+      if (action.type === "report_obstruction") {
+        addReport("Voice-reported roadside obstruction");
+      }
+      if (action.type === "generate_patrol_route") {
+        useViolationPoliceStore.getState().fetchPatrolRoute(Number(action.payload.limit || 5));
+      }
+      if (action.type === "latest_violations") {
+        useViolationPoliceStore.getState().fetchCases({ limit: 20 });
+      }
+      if (action.type === "top_hotspots") {
+        useViolationPoliceStore.getState().fetchHotspots();
+      }
+      if (action.type === "pending_cases") {
+        useViolationPoliceStore.getState().fetchCases({ status: "pending" });
+      }
+      if (action.type === "approve_case") {
+        const selectedId = useViolationPoliceStore.getState().selectedCaseId;
+        if (selectedId) {
+          useViolationPoliceStore.getState().approveCase(selectedId);
+        }
+      }
+      if (action.type === "reject_case") {
+        const selectedId = useViolationPoliceStore.getState().selectedCaseId;
+        if (selectedId) {
+          useViolationPoliceStore.getState().rejectCase(selectedId);
+        }
+      }
+      if (action.type === "avoid_hotspots_route") {
+        setAlternateRoute({
+          from: "Koramangala",
+          to: "MG Road",
+          via: "Inner Ring Road (Avoids Hotspots)",
+        });
+      }
+      if (action.type === "quit_agent") {
+        setOpen(false);
+        setSelectedOption(null);
+        stopContinuousListening();
+      }
+      if (action.type === "take_screenshot") {
+        try {
+          const html2canvas = (await import("html2canvas")).default;
+          const canvas = await html2canvas(document.body, {
+            useCORS: true,
+            logging: false,
+            backgroundColor: "#070b14",
+          });
+          const imgData = canvas.toDataURL("image/png");
+          const link = document.createElement("a");
+          link.href = imgData;
+          link.download = "gridsight-screenshot.png";
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        } catch (err) {
+          console.error("Screenshot capture failed:", err);
+        }
+      }
+      if (action.type === "scroll") {
+        const dir = action.payload.direction;
+        if (dir === "down") {
+          window.scrollBy({ top: window.innerHeight * 0.6, behavior: "smooth" });
+        } else if (dir === "up") {
+          window.scrollBy({ top: -window.innerHeight * 0.6, behavior: "smooth" });
+        } else if (dir === "top") {
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        } else if (dir === "bottom") {
+          window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
+        }
+      }
+      if (action.type === "navigate_section") {
+        const { route, elementId, tab } = action.payload;
+        
+        const doScrollAndTab = () => {
+          if (tab) {
+            window.dispatchEvent(new CustomEvent("switch-police-tab", { detail: tab }));
+          }
+          setTimeout(() => {
+            const el = elementId === "root" ? document.documentElement : document.getElementById(elementId);
+            if (el) {
+              el.scrollIntoView({ behavior: "smooth", block: "center" });
+              if (elementId !== "root") {
+                el.classList.add("ring-4", "ring-yellow-500", "ring-offset-2", "ring-offset-slate-950", "transition-all", "duration-500");
+                setTimeout(() => {
+                  el.classList.remove("ring-4", "ring-yellow-500", "ring-offset-2", "ring-offset-slate-950");
+                }, 2500);
+              }
+            }
+          }, 300);
+        };
+
+        if (pathname !== route) {
+          router.push(route);
+          setTimeout(doScrollAndTab, 850);
+        } else {
+          doScrollAndTab();
+        }
+      }
+    }
+  }
+
   async function handleSpeechCommandSubmit(text: string) {
     if (!text.trim()) return;
     setProcessing(true);
@@ -231,52 +348,7 @@ export function VoiceAgent({ persona }: VoiceAgentProps) {
       setLastResponse(data);
       addHistory("assistant", data.spokenResponse);
 
-      for (const action of data.uiActions ?? []) {
-        if (action.type === "filter_corridor" && action.payload.corridor) {
-          setSelectedCorridor(String(action.payload.corridor));
-        }
-        if (action.type === "show_alternate_route") {
-          setAlternateRoute({
-            from: String(action.payload.from ?? ""),
-            to: String(action.payload.to ?? ""),
-            via: String(action.payload.via ?? ""),
-          });
-        }
-        if (action.type === "report_obstruction") {
-          addReport("Voice-reported roadside obstruction");
-        }
-        if (action.type === "generate_patrol_route") {
-          useViolationPoliceStore.getState().fetchPatrolRoute(Number(action.payload.limit || 5));
-        }
-        if (action.type === "latest_violations") {
-          useViolationPoliceStore.getState().fetchCases({ limit: 20 });
-        }
-        if (action.type === "top_hotspots") {
-          useViolationPoliceStore.getState().fetchHotspots();
-        }
-        if (action.type === "pending_cases") {
-          useViolationPoliceStore.getState().fetchCases({ status: "pending" });
-        }
-        if (action.type === "approve_case") {
-          const selectedId = useViolationPoliceStore.getState().selectedCaseId;
-          if (selectedId) {
-            useViolationPoliceStore.getState().approveCase(selectedId);
-          }
-        }
-        if (action.type === "reject_case") {
-          const selectedId = useViolationPoliceStore.getState().selectedCaseId;
-          if (selectedId) {
-            useViolationPoliceStore.getState().rejectCase(selectedId);
-          }
-        }
-        if (action.type === "avoid_hotspots_route") {
-          setAlternateRoute({
-            from: "Koramangala",
-            to: "MG Road",
-            via: "Inner Ring Road (Avoids Hotspots)",
-          });
-        }
-      }
+      await executeUiActions(data.uiActions ?? []);
 
       // Step 4: Complete
       setOrchestrationStep(4);
@@ -358,52 +430,7 @@ export function VoiceAgent({ persona }: VoiceAgentProps) {
       setLastResponse(data);
       addHistory("assistant", data.spokenResponse);
 
-      for (const action of data.uiActions ?? []) {
-        if (action.type === "filter_corridor" && action.payload.corridor) {
-          setSelectedCorridor(String(action.payload.corridor));
-        }
-        if (action.type === "show_alternate_route") {
-          setAlternateRoute({
-            from: String(action.payload.from ?? ""),
-            to: String(action.payload.to ?? ""),
-            via: String(action.payload.via ?? ""),
-          });
-        }
-        if (action.type === "report_obstruction") {
-          addReport("Voice-reported roadside obstruction");
-        }
-        if (action.type === "generate_patrol_route") {
-          useViolationPoliceStore.getState().fetchPatrolRoute(Number(action.payload.limit || 5));
-        }
-        if (action.type === "latest_violations") {
-          useViolationPoliceStore.getState().fetchCases({ limit: 20 });
-        }
-        if (action.type === "top_hotspots") {
-          useViolationPoliceStore.getState().fetchHotspots();
-        }
-        if (action.type === "pending_cases") {
-          useViolationPoliceStore.getState().fetchCases({ status: "pending" });
-        }
-        if (action.type === "approve_case") {
-          const selectedId = useViolationPoliceStore.getState().selectedCaseId;
-          if (selectedId) {
-            useViolationPoliceStore.getState().approveCase(selectedId);
-          }
-        }
-        if (action.type === "reject_case") {
-          const selectedId = useViolationPoliceStore.getState().selectedCaseId;
-          if (selectedId) {
-            useViolationPoliceStore.getState().rejectCase(selectedId);
-          }
-        }
-        if (action.type === "avoid_hotspots_route") {
-          setAlternateRoute({
-            from: "Koramangala",
-            to: "MG Road",
-            via: "Inner Ring Road (Avoids Hotspots)",
-          });
-        }
-      }
+      await executeUiActions(data.uiActions ?? []);
     } finally {
       setProcessing(false);
       setListening(false);
@@ -905,6 +932,29 @@ export function VoiceAgent({ persona }: VoiceAgentProps) {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Viewport-wide yellow borderless vignette ambient edge glow overlay when voice controlled */}
+      {isOpen && selectedOption === "operational" && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{
+            opacity: voiceRecordingState === "listening" ? [0.65, 1, 0.65] : 0.7,
+            boxShadow: voiceRecordingState === "listening"
+              ? [
+                  "inset 0 0 70px rgba(245, 158, 11, 0.35), inset 0 0 25px rgba(245, 158, 11, 0.18)",
+                  "inset 0 0 130px rgba(245, 158, 11, 0.65), inset 0 0 55px rgba(245, 158, 11, 0.35)",
+                  "inset 0 0 70px rgba(245, 158, 11, 0.35), inset 0 0 25px rgba(245, 158, 11, 0.18)"
+                ]
+              : "inset 0 0 60px rgba(245, 158, 11, 0.3), inset 0 0 20px rgba(245, 158, 11, 0.15)"
+          }}
+          transition={{
+            duration: 2.2,
+            repeat: Infinity,
+            ease: "easeInOut"
+          }}
+          className="fixed inset-0 pointer-events-none z-[99999]"
+        />
+      )}
     </>
   );
 }

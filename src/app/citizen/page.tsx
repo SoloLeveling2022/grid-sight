@@ -96,16 +96,18 @@ export default function CitizenPage() {
 
       <div className="grid gap-4 lg:grid-cols-12">
         <section className="space-y-4 lg:col-span-7">
-          <GridSightMap
-            className="h-[300px] sm:h-[420px]"
-            hotspots={mapHotspots}
-            incidents={[]}
-            showHeatmap
-            showHotspots
-            showIncidents={false}
-            alternateRoute={alternateRoute}
-            onSelectHotspot={(hotspot) => selectHotspot(hotspot.name)}
-          />
+          <div id="route-map-section">
+            <GridSightMap
+              className="h-[300px] sm:h-[420px]"
+              hotspots={mapHotspots}
+              incidents={[]}
+              showHeatmap
+              showHotspots
+              showIncidents={false}
+              alternateRoute={alternateRoute}
+              onSelectHotspot={(hotspot) => selectHotspot(hotspot.name)}
+            />
+          </div>
 
           <Skeleton name="citizen-hotspot-strip" loading={isLoading}>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -127,7 +129,7 @@ export default function CitizenPage() {
             </div>
           </Skeleton>
 
-          <Card className="border-slate-800 bg-slate-900/10">
+          <Card id="advisory-section" className="border-slate-800 bg-slate-900/10">
             <CardHeader className="pb-2">
               <CardTitle>Enforcement activity summary</CardTitle>
               <CardDescription>Hot zones to be aware of on your commute.</CardDescription>
@@ -241,7 +243,7 @@ export default function CitizenPage() {
           </Skeleton>
 
           <Skeleton name="citizen-report-form" loading={isLoading}>
-            <Card>
+            <Card id="report-section">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <AlertCircle className="h-4 w-4 text-amber-400" />
@@ -285,7 +287,6 @@ export default function CitizenPage() {
         </aside>
       </div>
 
-      <VoiceAgent persona="citizen" />
     </AppShell>
   );
 }

@@ -153,7 +153,7 @@ export default function IncidentExplorerPage() {
           </Card>
 
           {/* List Results */}
-          <Card className="flex-1 border-slate-800 bg-slate-900/10 min-h-[400px]">
+          <Card id="incidents-feed-section" className="flex-1 border-slate-800 bg-slate-900/10 min-h-[400px]">
             <CardHeader className="pb-2 border-b border-slate-850">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm font-semibold text-slate-200">Incident Feed</CardTitle>
@@ -267,7 +267,7 @@ export default function IncidentExplorerPage() {
               </Card>
 
               {/* Map Location */}
-              <Card className="border-slate-800 bg-slate-900/15 overflow-hidden flex flex-col flex-1 h-[250px]">
+              <Card id="incidents-map-section" className="border-slate-800 bg-slate-900/15 overflow-hidden flex flex-col flex-1 h-[250px]">
                 <CardHeader className="p-3 pb-1.5 border-b border-slate-850">
                   <CardTitle className="text-xs font-semibold text-slate-400 flex items-center gap-1">
                     <MapPin className="h-3.5 w-3.5 text-amber-400" />
@@ -294,7 +294,6 @@ export default function IncidentExplorerPage() {
           )}
         </div>
       </div>
-      <VoiceAgent persona="police" />
     </AppShell>
   );
 }

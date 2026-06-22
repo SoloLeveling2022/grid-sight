@@ -122,7 +122,7 @@ export default function ViolationsExplorerPage() {
 
       <div className="grid gap-4 lg:grid-cols-12">
         <section className="space-y-4 lg:col-span-8">
-          <Card className="border-slate-800 bg-slate-900/15">
+          <Card id="hotspots-map-section" className="border-slate-800 bg-slate-900/15">
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2">
                 <MapPin className="h-4 w-4 text-blue-400" />
@@ -142,13 +142,13 @@ export default function ViolationsExplorerPage() {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card id="explorer-section">
             <CardHeader>
               <CardTitle>Cases matching filters</CardTitle>
               <CardDescription>Search and filter violation cases. Showing {filteredViolations.length.toLocaleString("en-IN")} of {meta?.sampledCases?.toLocaleString("en-IN") ?? 0} demo cases.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
-              <div className="grid gap-2 lg:grid-cols-4">
+              <div id="filters-section" className="grid gap-2 lg:grid-cols-4">
                 <label className="relative lg:col-span-2">
                   <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-500" />
                   <input

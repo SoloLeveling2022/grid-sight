@@ -21,6 +21,30 @@ const sessions = new Map<string, VoiceSession>();
 
 function parseIntent(transcript: string, persona: "police" | "citizen"): string {
   const t = transcript.toLowerCase();
+
+  // General commands regardless of persona
+  if (t.includes("quit") || t.includes("exit") || t.includes("close agent") || t.includes("close assistant")) {
+    return "quit_agent";
+  }
+  if (t.includes("screenshot") || t.includes("take a screenshot") || t.includes("capture screen")) {
+    return "take_screenshot";
+  }
+  if (t.includes("scroll down") || t.includes("move down") || t.includes("page down")) {
+    return "scroll_down";
+  }
+  if (t.includes("scroll up") || t.includes("move up") || t.includes("page up")) {
+    return "scroll_up";
+  }
+  if (t.includes("scroll to top") || t.includes("go to top")) {
+    return "scroll_top";
+  }
+  if (t.includes("scroll to bottom") || t.includes("go to bottom")) {
+    return "scroll_bottom";
+  }
+  if (t.includes("navigate") || t.includes("go to") || t.includes("show me") || t.includes("find me") || t.includes("open") || t.includes("find the") || t.includes("show the") || t.includes("go the")) {
+    return "navigate_section";
+  }
+
   if (persona === "police") {
     // Generate Patrol Route
     if (t.includes("route") || t.includes("patrol") || t.includes("direction") || t.includes("path")) {
@@ -83,7 +107,145 @@ function parseIntent(transcript: string, persona: "police" | "citizen"): string 
   return "general_query";
 }
 
+function handleGeneralIntent(
+  intent: string,
+  transcript: string
+): { spoken: string; uiActions: VoiceUIAction[] } | null {
+  const uiActions: VoiceUIAction[] = [];
+  let spoken = "";
+
+  switch (intent) {
+    case "quit_agent": {
+      spoken = "Closing voice assistant console.";
+      uiActions.push({ type: "quit_agent", payload: {} });
+      return { spoken, uiActions };
+    }
+    case "take_screenshot": {
+      spoken = "Capturing page screenshot and starting download.";
+      uiActions.push({ type: "take_screenshot", payload: {} });
+      return { spoken, uiActions };
+    }
+    case "scroll_down": {
+      spoken = "Scrolling down.";
+      uiActions.push({ type: "scroll", payload: { direction: "down" } });
+      return { spoken, uiActions };
+    }
+    case "scroll_up": {
+      spoken = "Scrolling up.";
+      uiActions.push({ type: "scroll", payload: { direction: "up" } });
+      return { spoken, uiActions };
+    }
+    case "scroll_top": {
+      spoken = "Scrolling to top of the page.";
+      uiActions.push({ type: "scroll", payload: { direction: "top" } });
+      return { spoken, uiActions };
+    }
+    case "scroll_bottom": {
+      spoken = "Scrolling to bottom of the page.";
+      uiActions.push({ type: "scroll", payload: { direction: "bottom" } });
+      return { spoken, uiActions };
+    }
+    case "navigate_section": {
+      let matchedSection = "dashboard";
+      let route = "/police";
+      let elementId = "map-section";
+      let tab: string | undefined;
+
+      const t = transcript.toLowerCase();
+      if (t.includes("camera") || t.includes("cctv") || t.includes("video")) {
+        matchedSection = "camera";
+        route = "/police";
+        elementId = "cctv-section";
+      } else if (t.includes("map")) {
+        matchedSection = "enforcement map";
+        route = "/police";
+        elementId = "map-section";
+      } else if (t.includes("case") || t.includes("validation") || t.includes("offender") || t.includes("device") || t.includes("tab")) {
+        route = "/police";
+        elementId = "cases-section";
+        if (t.includes("validation")) {
+          matchedSection = "validation tab";
+          tab = "validation";
+        } else if (t.includes("offender")) {
+          matchedSection = "offenders tab";
+          tab = "offenders";
+        } else if (t.includes("device")) {
+          matchedSection = "devices tab";
+          tab = "devices";
+        } else {
+          matchedSection = "cases tab";
+          tab = "cases";
+        }
+      } else if (t.includes("performance") || t.includes("workload") || t.includes("enforcement priority") || t.includes("priority")) {
+        matchedSection = "enforcement priorities";
+        route = "/police";
+        elementId = "performance-section";
+      } else if (t.includes("explorer") || t.includes("violation") || t.includes("filter")) {
+        matchedSection = "violation cases explorer";
+        route = "/violations";
+        elementId = "explorer-section";
+        if (t.includes("filter")) {
+          elementId = "filters-section";
+        }
+      } else if (t.includes("ranking") || t.includes("density") || t.includes("details") || t.includes("hotspot")) {
+        matchedSection = "hotspots density rankings";
+        route = "/hotspots";
+        elementId = "rankings-section";
+        if (t.includes("details")) {
+          elementId = "details-section";
+        }
+      } else if (t.includes("incident feed") || t.includes("feed") || t.includes("incident")) {
+        matchedSection = "incident feed";
+        route = "/incidents";
+        elementId = "incidents-feed-section";
+      } else if (t.includes("report") || t.includes("obstruction")) {
+        matchedSection = "report obstruction form";
+        route = "/citizen";
+        elementId = "report-section";
+      } else if (t.includes("advisory") || t.includes("advise")) {
+        matchedSection = "citizen advisories";
+        route = "/citizen";
+        elementId = "advisory-section";
+      } else if (t.includes("citizen")) {
+        matchedSection = "citizen portal";
+        route = "/citizen";
+        elementId = "route-map-section";
+      } else if (t.includes("architecture") || t.includes("design")) {
+        matchedSection = "system architecture";
+        route = "/architecture";
+        elementId = "root";
+      } else if (t.includes("auth") || t.includes("login")) {
+        matchedSection = "authentication";
+        route = "/auth";
+        elementId = "root";
+      }
+
+      spoken = `Navigating to the ${matchedSection} on ${route}.`;
+      uiActions.push({
+        type: "navigate_section",
+        payload: { route, elementId, tab }
+      });
+      return { spoken, uiActions };
+    }
+  }
+
+  return null;
+}
+
 function policeResponse(intent: string, transcript: string, ctx?: VoiceCommandRequest["context"]): VoiceCommandResponse {
+  const general = handleGeneralIntent(intent, transcript);
+  if (general) {
+    return {
+      sessionId: "",
+      transcript,
+      intent,
+      spokenResponse: general.spoken,
+      toolCalls: [],
+      uiActions: general.uiActions,
+      confidence: 0.95,
+    };
+  }
+
   const uiActions: VoiceUIAction[] = [];
   let spoken = "I can help with hotspots, enforcement priority, and corridor status.";
   let toolCalls: VoiceCommandResponse["toolCalls"] = [];
@@ -178,6 +340,19 @@ function policeResponse(intent: string, transcript: string, ctx?: VoiceCommandRe
 }
 
 function citizenResponse(intent: string, transcript: string, ctx?: VoiceCommandRequest["context"]): VoiceCommandResponse {
+  const general = handleGeneralIntent(intent, transcript);
+  if (general) {
+    return {
+      sessionId: "",
+      transcript,
+      intent,
+      spokenResponse: general.spoken,
+      toolCalls: [],
+      uiActions: general.uiActions,
+      confidence: 0.95,
+    };
+  }
+
   const uiActions: VoiceUIAction[] = [];
   let spoken = "I can check road status, suggest routes, or help report obstructions.";
   const toolCalls: VoiceCommandResponse["toolCalls"] = [];

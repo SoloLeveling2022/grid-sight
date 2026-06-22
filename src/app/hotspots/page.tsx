@@ -79,7 +79,7 @@ export default function HotspotsPage() {
       <div className="grid gap-4 lg:grid-cols-12">
         {/* Junction Ranking List (Left 6 columns) */}
         <div className="lg:col-span-6 flex flex-col gap-3">
-          <Card className="flex-1 border-slate-800 bg-slate-900/10 flex flex-col">
+          <Card id="rankings-section" className="flex-1 border-slate-800 bg-slate-900/10 flex flex-col">
             <CardHeader className="pb-2 border-b border-slate-850">
               <CardTitle className="text-sm font-semibold text-slate-200">Violation Hotspot Density Rankings</CardTitle>
               <CardDescription className="text-slate-500">
@@ -89,7 +89,7 @@ export default function HotspotsPage() {
             <CardContent className="p-0 flex-1 overflow-y-auto max-h-[560px] divide-y divide-slate-850 scrollbar-thin">
               {sortedJunctions.map((j, i) => (
                 <div
-                  key={j.junctionName}
+                  key={`${j.junctionName}-${i}`}
                   onClick={() => {
                     setSelectedJuncName(j.junctionName);
                   }}
@@ -126,7 +126,7 @@ export default function HotspotsPage() {
         <div className="lg:col-span-6 flex flex-col gap-4">
           <div className="grid gap-4 sm:grid-cols-1">
             {/* Selected Hotspot Details */}
-            <Card className="border-slate-800 bg-slate-900/15 min-h-[260px] flex flex-col justify-between">
+            <Card id="details-section" className="border-slate-800 bg-slate-900/15 min-h-[260px] flex flex-col justify-between">
               <CardHeader className="pb-1">
                 <span className="text-[9px] text-slate-500 uppercase tracking-widest font-bold">
                   Cluster Intelligence Details
@@ -204,7 +204,6 @@ export default function HotspotsPage() {
           </Card>
         </div>
       </div>
-      <VoiceAgent persona="police" />
     </AppShell>
   );
 }

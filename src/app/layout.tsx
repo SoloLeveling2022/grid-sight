@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import ServiceWorkerRegister from "@/components/layout/sw-register";
+import { GlobalVoiceAgent } from "@/components/voice/global-voice-agent";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -48,6 +49,7 @@ export default function RootLayout({
         /> */}
         <ServiceWorkerRegister />
         {children}
+        <GlobalVoiceAgent />
       </body>
     </html>
   );
