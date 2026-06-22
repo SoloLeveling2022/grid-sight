@@ -48,6 +48,17 @@ export function VoiceAgent({ persona }: VoiceAgentProps) {
   // Selector state: operational or telephony
   const [selectedOption, setSelectedOption] = useState<"operational" | "telephony" | null>(null);
 
+  const processingRef = useRef(processing);
+  const selectedOptionRef = useRef(selectedOption);
+
+  useEffect(() => {
+    processingRef.current = processing;
+  }, [processing]);
+
+  useEffect(() => {
+    selectedOptionRef.current = selectedOption;
+  }, [selectedOption]);
+
   // Operational agent voice recording states
   const [micPermission, setMicPermission] = useState<"prompt" | "granted" | "denied">("prompt");
   const [voiceRecordingState, setVoiceRecordingState] = useState<"idle" | "listening" | "recorded">("idle");
@@ -151,6 +162,7 @@ export function VoiceAgent({ persona }: VoiceAgentProps) {
       };
 
       recognition.onresult = (event: any) => {
+        if (processingRef.current) return;
         let interimTranscript = "";
         let finalTranscript = "";
 
@@ -184,14 +196,10 @@ export function VoiceAgent({ persona }: VoiceAgentProps) {
       };
 
       recognition.onend = () => {
-        if (selectedOption === "operational") {
+        if (selectedOptionRef.current === "operational" && !processingRef.current) {
           setTimeout(() => {
-            try {
-              if (recognitionRef.current) {
-                recognitionRef.current.start();
-              }
-            } catch (e) {
-              console.error("Failed to restart SpeechRecognition:", e);
+            if (selectedOptionRef.current === "operational" && !processingRef.current) {
+              startContinuousListening();
             }
           }, 300);
         }
@@ -317,9 +325,18 @@ export function VoiceAgent({ persona }: VoiceAgentProps) {
   }
 
   async function handleSpeechCommandSubmit(text: string) {
-    if (!text.trim()) return;
+    if (!text.trim() || processingRef.current) return;
     setProcessing(true);
+    processingRef.current = true;
     setInput("");
+
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch (e) {
+        // ignore
+      }
+    }
 
     try {
       // Step 1: STT Parse
@@ -358,12 +375,9 @@ export function VoiceAgent({ persona }: VoiceAgentProps) {
     } finally {
       setOrchestrationStep(0);
       setProcessing(false);
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.stop();
-        } catch (e) {
-          // ignore
-        }
+      processingRef.current = false;
+      if (selectedOptionRef.current === "operational") {
+        startContinuousListening();
       }
     }
   }
@@ -379,6 +393,7 @@ export function VoiceAgent({ persona }: VoiceAgentProps) {
     }
     if (recognitionRef.current) {
       try {
+        recognitionRef.current.onend = null;
         recognitionRef.current.abort();
       } catch (e) {
         // ignore

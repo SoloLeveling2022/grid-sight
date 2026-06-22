@@ -160,6 +160,13 @@ function handleGeneralIntent(
         matchedSection = "enforcement map";
         route = "/police";
         elementId = "map-section";
+      } else if (t.includes("explorer") || t.includes("violation") || t.includes("filter")) {
+        matchedSection = "violation cases explorer";
+        route = "/violations";
+        elementId = "explorer-section";
+        if (t.includes("filter")) {
+          elementId = "filters-section";
+        }
       } else if (t.includes("case") || t.includes("validation") || t.includes("offender") || t.includes("device") || t.includes("tab")) {
         route = "/police";
         elementId = "cases-section";
@@ -180,13 +187,6 @@ function handleGeneralIntent(
         matchedSection = "enforcement priorities";
         route = "/police";
         elementId = "performance-section";
-      } else if (t.includes("explorer") || t.includes("violation") || t.includes("filter")) {
-        matchedSection = "violation cases explorer";
-        route = "/violations";
-        elementId = "explorer-section";
-        if (t.includes("filter")) {
-          elementId = "filters-section";
-        }
       } else if (t.includes("ranking") || t.includes("density") || t.includes("details") || t.includes("hotspot")) {
         matchedSection = "hotspots density rankings";
         route = "/hotspots";
@@ -217,6 +217,10 @@ function handleGeneralIntent(
       } else if (t.includes("auth") || t.includes("login")) {
         matchedSection = "authentication";
         route = "/auth";
+        elementId = "root";
+      } else if (t.includes("analytics") || t.includes("chart") || t.includes("graph")) {
+        matchedSection = "analytics dashboard";
+        route = "/analytics";
         elementId = "root";
       }
 
