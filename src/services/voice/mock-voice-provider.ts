@@ -22,18 +22,54 @@ const sessions = new Map<string, VoiceSession>();
 function parseIntent(transcript: string, persona: "police" | "citizen"): string {
   const t = transcript.toLowerCase();
   if (persona === "police") {
-    if (t.includes("patrol") && t.includes("route")) return "generate_patrol_route";
-    if (t.includes("latest") && (t.includes("violation") || t.includes("case"))) return "latest_violations";
-    if (t.includes("top") && t.includes("hotspot")) return "top_hotspots";
-    if (t.includes("pending") && t.includes("case")) return "pending_cases";
-    if (t.includes("approve") && t.includes("case")) return "approve_case";
-    if (t.includes("reject") && t.includes("case")) return "reject_case";
-    if (t.includes("congestion") && t.includes("impact")) return "show_congestion_impact";
-    if (t.includes("hotspot") || t.includes("congestion")) return "show_hotspots";
-    if (t.includes("worsen") || t.includes("next 30")) return "predict_worsening";
-    if (t.includes("enforcement") || t.includes("priority")) return "enforcement_priority";
-    if (t.includes("mark") && t.includes("active")) return "mark_incident_active";
-    if (t.includes("corridor")) return "filter_corridor";
+    // Generate Patrol Route
+    if ((t.includes("patrol") && (t.includes("route") || t.includes("generate") || t.includes("create") || t.includes("recommend"))) || t === "patrol" || t === "patrol route") {
+      return "generate_patrol_route";
+    }
+    // Latest Violations
+    if ((t.includes("latest") || t.includes("show") || t.includes("get") || t.includes("fetch")) && (t.includes("violation") || t.includes("case") || t.includes("ticket"))) {
+      return "latest_violations";
+    }
+    // Top Hotspots
+    if ((t.includes("top") || t.includes("show") || t.includes("get") || t.includes("major")) && (t.includes("hotspot") || t.includes("congestion center"))) {
+      return "top_hotspots";
+    }
+    // Pending Cases
+    if ((t.includes("pending") || t.includes("validation") || t.includes("queue")) && (t.includes("case") || t.includes("violation") || t.includes("ticket") || t.includes("show"))) {
+      return "pending_cases";
+    }
+    // Approve Case
+    if (t.includes("approve") || t.includes("validate") || t.includes("confirm") || t.includes("accept") || t.includes("verify")) {
+      return "approve_case";
+    }
+    // Reject Case
+    if (t.includes("reject") || t.includes("dismiss") || t.includes("decline") || t.includes("discard") || t.includes("cancel")) {
+      return "reject_case";
+    }
+    // Show Congestion Impact
+    if (t.includes("congestion") && (t.includes("impact") || t.includes("quantify") || t.includes("score") || t.includes("measure"))) {
+      return "show_congestion_impact";
+    }
+    // Show Hotspots
+    if (t.includes("hotspot") || t.includes("congestion")) {
+      return "show_hotspots";
+    }
+    // Predict Worsening
+    if (t.includes("worsen") || t.includes("predict") || t.includes("next 30") || t.includes("future")) {
+      return "predict_worsening";
+    }
+    // Enforcement Priority
+    if (t.includes("enforcement") || t.includes("priority") || t.includes("deploy") || t.includes("tow")) {
+      return "enforcement_priority";
+    }
+    // Mark Incident Active
+    if (t.includes("mark") || t.includes("active") || t.includes("resolve") || t.includes("incident")) {
+      return "mark_incident_active";
+    }
+    // Filter Corridor
+    if (t.includes("corridor") || t.includes("orr") || t.includes("bellary") || t.includes("hosur") || t.includes("bannerghatta") || t.includes("tumkur") || t.includes("madras") || t.includes("magadi")) {
+      return "filter_corridor";
+    }
   } else {
     if (t.includes("route from koramangala") || t.includes("mg road")) return "citizen_route";
     if (t.includes("less traffic") || (t.includes("traffic") && t.includes("route"))) return "less_traffic_route";

@@ -55,6 +55,8 @@ export function VoiceAgent({ persona }: VoiceAgentProps) {
   const chunksRef = useRef<Blob[]>([]);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const timerRef = useRef<any>(null);
+  const recognitionRef = useRef<any>(null);
+  const silenceTimeoutRef = useRef<any>(null);
 
   // Live call states
   const [calling, setCalling] = useState(false);
@@ -95,106 +97,160 @@ export function VoiceAgent({ persona }: VoiceAgentProps) {
     }
   }
 
-  async function startVoiceRecording() {
+  async function startContinuousListening() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
-      
-      const mediaRecorder = new MediaRecorder(stream);
-      mediaRecorderRef.current = mediaRecorder;
-      chunksRef.current = [];
+      stream.getTracks().forEach((track) => track.stop());
+      setMicPermission("granted");
+    } catch (err) {
+      console.error("Mic permission denied:", err);
+      setMicPermission("denied");
+      return;
+    }
 
-      mediaRecorder.ondataavailable = (e) => {
-        if (e.data && e.data.size > 0) {
-          chunksRef.current.push(e.data);
-        }
-      };
-
-      mediaRecorder.onstop = () => {
-        const blob = new Blob(chunksRef.current, { type: "audio/webm" });
-        const url = URL.createObjectURL(blob);
-        setRecordedAudioUrl(url);
-        setVoiceRecordingState("recorded");
-        
-        // Feed into history and show processing
-        addHistory("user", "hello! grid sight");
-        addHistory("assistant", "Hello! I've successfully received and processed your voice input saying 'hello! grid sight'. Operational Voice Agent is now activated. You can select traffic route commands or speak commands below.");
-      };
-
-      mediaRecorder.start();
+    const SpeechRecognition = typeof window !== "undefined" && ((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
+    if (!SpeechRecognition) {
+      console.warn("SpeechRecognition is not supported in this browser. Falling back to simulation mode.");
       setVoiceRecordingState("listening");
       setRecordingSeconds(0);
-
       if (timerRef.current) clearInterval(timerRef.current);
       timerRef.current = setInterval(() => {
         setRecordingSeconds((prev) => prev + 1);
       }, 1000);
+      return;
+    }
+
+    try {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.abort();
+        } catch (e) {
+          // ignore
+        }
+      }
+
+      const recognition = new SpeechRecognition();
+      recognitionRef.current = recognition;
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = "en-IN";
+
+      recognition.onstart = () => {
+        setVoiceRecordingState("listening");
+        setRecordingSeconds(0);
+        if (timerRef.current) clearInterval(timerRef.current);
+        timerRef.current = setInterval(() => {
+          setRecordingSeconds((prev) => prev + 1);
+        }, 1000);
+      };
+
+      recognition.onresult = (event: any) => {
+        let interimTranscript = "";
+        let finalTranscript = "";
+
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) {
+            finalTranscript += event.results[i][0].transcript;
+          } else {
+            interimTranscript += event.results[i][0].transcript;
+          }
+        }
+
+        const currentText = finalTranscript || interimTranscript;
+        if (currentText.trim()) {
+          setInput(currentText);
+
+          if (silenceTimeoutRef.current) {
+            clearTimeout(silenceTimeoutRef.current);
+          }
+
+          silenceTimeoutRef.current = setTimeout(() => {
+            handleSpeechCommandSubmit(currentText);
+          }, 1500);
+        }
+      };
+
+      recognition.onerror = (event: any) => {
+        console.error("Speech recognition error:", event.error);
+        if (event.error === "not-allowed") {
+          setMicPermission("denied");
+        }
+      };
+
+      recognition.onend = () => {
+        if (selectedOption === "operational") {
+          try {
+            recognition.start();
+          } catch (e) {
+            console.error("Failed to restart SpeechRecognition:", e);
+          }
+        }
+      };
+
+      recognition.start();
     } catch (err) {
-      console.error("Failed to start voice recording:", err);
-      setMicPermission("denied");
+      console.error("SpeechRecognition start error:", err);
     }
   }
 
-  function stopVoiceRecording() {
+  async function handleSpeechCommandSubmit(text: string) {
+    if (!text.trim()) return;
+    setProcessing(true);
+    setInput("");
+
+    try {
+      await sendCommand(text);
+    } catch (e) {
+      console.error("Error submitting command:", e);
+    } finally {
+      setProcessing(false);
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch (e) {
+          // ignore
+        }
+      }
+    }
+  }
+
+  function stopContinuousListening() {
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
-      mediaRecorderRef.current.stop();
+    if (silenceTimeoutRef.current) {
+      clearTimeout(silenceTimeoutRef.current);
+      silenceTimeoutRef.current = null;
+    }
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.abort();
+      } catch (e) {
+        // ignore
+      }
+      recognitionRef.current = null;
     }
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
     }
-  }
-
-  function playRecordedAudio() {
-    if (!recordedAudioUrl) return;
-    
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current = null;
-      setIsPlayingRecordedAudio(false);
-      return;
-    }
-
-    const audio = new Audio(recordedAudioUrl);
-    audioRef.current = audio;
-    setIsPlayingRecordedAudio(true);
-    
-    audio.play().catch(err => {
-      console.error("Audio playback failed:", err);
-      setIsPlayingRecordedAudio(false);
-    });
-
-    audio.onended = () => {
-      setIsPlayingRecordedAudio(false);
-      audioRef.current = null;
-    };
-  }
-
-  function resetVoiceRecording() {
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current = null;
-    }
-    setIsPlayingRecordedAudio(false);
-    setRecordedAudioUrl(null);
     setVoiceRecordingState("idle");
     setRecordingSeconds(0);
   }
 
+  function formatDuration(sec: number) {
+    const mins = Math.floor(sec / 60);
+    const secs = sec % 60;
+    return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+  }
+
   useEffect(() => {
     return () => {
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((track) => track.stop());
-      }
+      stopContinuousListening();
       if (audioRef.current) {
         audioRef.current.pause();
-      }
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
       }
     };
   }, []);
@@ -291,13 +347,13 @@ export function VoiceAgent({ persona }: VoiceAgentProps) {
           const status = data.status;
           
           if (status === "ringing") {
-            setCallStatus("🔔 Ringing...");
+            setCallStatus("Ringing...");
           } else if (status === "talking") {
-            setCallStatus("📞 Connected...");
+            setCallStatus("Connected...");
           } else if (status === "transcribing") {
-            setCallStatus("📝 Finalizing...");
+            setCallStatus("Finalizing...");
           } else if (status === "completed") {
-            setCallStatus("✅ Call Ended");
+            setCallStatus("Call Ended");
             setActiveCallId(null);
             
             if (data.transcript) {
@@ -307,7 +363,7 @@ export function VoiceAgent({ persona }: VoiceAgentProps) {
             }
             setTimeout(() => setCallStatus(null), 4000);
           } else if (status === "failed" || status === "no-answer" || status === "busy") {
-            setCallStatus("❌ Failed");
+            setCallStatus("Failed");
             setActiveCallId(null);
             addHistory("assistant", `Outbound call ended with status: ${status}`);
             setTimeout(() => setCallStatus(null), 4000);
@@ -319,7 +375,7 @@ export function VoiceAgent({ persona }: VoiceAgentProps) {
 
       attempts++;
       if (attempts >= maxAttempts) {
-        setCallStatus("⏱️ Timeout");
+        setCallStatus("Timeout");
         setActiveCallId(null);
         addHistory("assistant", "Outbound call status tracking timed out.");
         setTimeout(() => setCallStatus(null), 4000);
@@ -438,7 +494,10 @@ export function VoiceAgent({ persona }: VoiceAgentProps) {
                     </p>
                     <div className="grid grid-cols-1 gap-3">
                       <Button
-                        onClick={() => setSelectedOption("operational")}
+                        onClick={() => {
+                          setSelectedOption("operational");
+                          startContinuousListening();
+                        }}
                         variant="outline"
                         className="flex flex-col items-start gap-1 p-4 h-auto text-left border-slate-800 hover:border-amber-500/40 hover:bg-amber-500/5 transition-all text-slate-200 cursor-pointer"
                       >
@@ -446,7 +505,7 @@ export function VoiceAgent({ persona }: VoiceAgentProps) {
                           <Mic className="h-4 w-4 text-amber-400" />
                           Operational Voice Agent
                         </div>
-                        <span className="text-[10px] text-slate-400 leading-normal font-normal">
+                        <span className="text-[10px] text-slate-400 leading-normal font-normal text-wrap">
                           Control the dashboard, filter map hotspots, and manage queues via interactive voice commands.
                         </span>
                       </Button>
@@ -460,195 +519,147 @@ export function VoiceAgent({ persona }: VoiceAgentProps) {
                           <Phone className="h-4 w-4 text-amber-400" />
                           Telephony Ringg Agent
                         </div>
-                        <span className="text-[10px] text-slate-400 leading-normal font-normal">
+                        <span className="text-[10px] text-slate-400 leading-normal font-normal text-wrap">
                           Establish live outbound voice calls to field officers to confirm local dispatch instructions.
                         </span>
                       </Button>
                     </div>
                   </div>
                 ) : selectedOption === "operational" ? (
-                  /* Section 1: Operational Voice Agent View */
-                  <div className="space-y-4">
+                  /* Section 1: Operational Voice Agent View (Continuous hands-free) */
+                  <div className="flex flex-col min-h-[380px] justify-between relative py-1">
+                    {/* Header with Back button */}
                     <div className="flex items-center justify-between border-b border-slate-900 pb-2">
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => setSelectedOption(null)}
+                        onClick={() => {
+                          stopContinuousListening();
+                          setSelectedOption(null);
+                        }}
                         className="text-slate-400 hover:text-slate-200 h-6 px-1.5 text-[10px] gap-1 cursor-pointer"
                       >
                         ← Back
                       </Button>
-                      <span className="text-[10px] font-bold text-amber-500 uppercase tracking-widest">Operational Agent</span>
+                      <span className="text-[10px] font-bold text-amber-500 uppercase tracking-widest">
+                        Continuous Operational Mode
+                      </span>
                     </div>
 
-                    {micPermission !== "granted" ? (
-                      <div className="flex flex-col items-center justify-center py-6 text-center gap-3">
-                        <div className="h-12 w-12 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center">
-                          <Mic className="h-6 w-6" />
+                    {micPermission === "denied" ? (
+                      /* Denied Permission View */
+                      <div className="flex flex-col items-center justify-center py-10 text-center gap-3 my-auto">
+                        <div className="h-12 w-12 rounded-full bg-red-500/10 border border-red-500/20 text-red-400 flex items-center justify-center">
+                          <MicOff className="h-6 w-6" />
                         </div>
                         <div className="space-y-1">
-                          <p className="text-xs font-semibold text-slate-200">Microphone Permission Required</p>
+                          <p className="text-xs font-semibold text-slate-200">Microphone Access Denied</p>
                           <p className="text-[10px] text-slate-500 max-w-[240px] leading-relaxed mx-auto">
-                            GridSight requires microphone access to capture your voice queries and parse command intents.
+                            Please enable microphone access in your browser settings to use the continuous hands-free voice agent.
                           </p>
                         </div>
-                        <Button
-                          onClick={requestMicPermission}
-                          size="sm"
-                          className="mt-2 text-xs font-medium cursor-pointer"
-                        >
-                          Grant Microphone Permission
-                        </Button>
-                        {micPermission === "denied" && (
-                          <p className="text-[9px] text-red-400 font-medium">
-                            Permission denied. Please enable microphone access in your browser settings.
-                          </p>
-                        )}
                       </div>
                     ) : (
-                      <div className="space-y-3">
-                        {voiceRecordingState === "idle" && (
-                          <div className="flex flex-col items-center justify-center py-8 text-center gap-3">
-                            <p className="text-xs font-semibold text-slate-200">Voice Activation Ready</p>
-                            <div className="text-[11px] text-slate-400">
-                              Please say: <span className="text-amber-400 font-bold font-mono">"hello! grid sight"</span>
-                            </div>
-                            <Button
-                              onClick={startVoiceRecording}
-                              size="sm"
-                              className="gap-2 cursor-pointer bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold"
-                            >
-                              <Mic className="h-4 w-4" />
-                              Start Voice Recording
-                            </Button>
+                      /* Active Continuous Listening Interface */
+                      <>
+                        {/* 1. Center Top: Text Bar */}
+                        <div className="w-full mt-4">
+                          <div className="relative flex items-center">
+                            <input
+                              type="text"
+                              value={input}
+                              onChange={(e) => {
+                                setInput(e.target.value);
+                                if (silenceTimeoutRef.current) clearTimeout(silenceTimeoutRef.current);
+                                silenceTimeoutRef.current = setTimeout(() => {
+                                  handleSpeechCommandSubmit(e.target.value);
+                                }, 3000); // 3 seconds timeout for typed inputs
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  if (silenceTimeoutRef.current) clearTimeout(silenceTimeoutRef.current);
+                                  handleSpeechCommandSubmit(input);
+                                }
+                              }}
+                              placeholder={processing ? "Processing intent..." : "Speak a command or type here..."}
+                              className="w-full text-center rounded-lg border border-slate-800 bg-slate-950/80 px-4 py-2.5 text-xs font-medium text-amber-200 placeholder:text-slate-600 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-all shadow-inner"
+                              disabled={processing}
+                            />
+                            {processing && (
+                              <div className="absolute right-3 h-3.5 w-3.5 rounded-full border-2 border-amber-500 border-t-transparent animate-spin" />
+                            )}
                           </div>
-                        )}
+                        </div>
 
-                        {voiceRecordingState === "listening" && (
-                          <div className="flex flex-col items-center justify-center py-8 text-center gap-4">
-                            <div className="relative flex items-center justify-center">
-                              <span className="absolute inline-flex h-16 w-16 rounded-full bg-red-500/20 opacity-75 animate-ping" />
-                              <div className="h-12 w-12 rounded-full bg-red-500 text-white flex items-center justify-center relative shadow-lg shadow-red-500/40">
-                                <Mic className="h-6 w-6 animate-pulse" />
-                              </div>
-                            </div>
-                            <div className="space-y-1">
-                              <p className="text-xs font-bold text-slate-100 animate-pulse">Recording... ({recordingSeconds}s)</p>
-                              <p className="text-[10px] text-slate-400">
-                                Say <span className="text-amber-400 font-bold font-mono">"hello! grid sight"</span> clearly.
-                              </p>
-                            </div>
+                        {/* 2. Center Middle: Pulsing mic + Continuous speech/recording animation */}
+                        <div className="flex flex-col items-center justify-center my-auto gap-4 py-6">
+                          <div className="relative flex items-center justify-center">
+                            {/* Animated concentric pulsing waves */}
+                            <motion.span
+                              animate={{
+                                scale: [1, 1.8, 1],
+                                opacity: [0.15, 0, 0.15],
+                              }}
+                              transition={{
+                                duration: 2,
+                                repeat: Infinity,
+                                ease: "easeInOut",
+                              }}
+                              className="absolute inline-flex h-20 w-20 rounded-full bg-amber-500/20"
+                            />
+                            <motion.span
+                              animate={{
+                                scale: [1, 2.4, 1],
+                                opacity: [0.1, 0, 0.1],
+                              }}
+                              transition={{
+                                duration: 2.5,
+                                repeat: Infinity,
+                                ease: "easeInOut",
+                                delay: 0.5,
+                              }}
+                              className="absolute inline-flex h-24 w-24 rounded-full bg-amber-500/10"
+                            />
 
-                            {/* Waveform Visualization */}
-                            <div className="flex items-end gap-1.5 h-6 justify-center mt-1">
-                              {[0.4, 0.8, 0.5, 0.9, 0.3, 0.7, 0.5, 0.8, 0.4].map((scale, i) => (
-                                <motion.div
-                                  key={i}
-                                  animate={{
-                                    height: ["8px", "24px", "8px"],
-                                  }}
-                                  transition={{
-                                    duration: 0.8,
-                                    repeat: Infinity,
-                                    delay: i * 0.08,
-                                    ease: "easeInOut",
-                                  }}
-                                  className="w-1 rounded-full bg-red-500"
-                                />
-                              ))}
+                            <div className="h-16 w-16 rounded-full bg-amber-500 text-slate-950 flex items-center justify-center relative shadow-lg shadow-amber-500/40 z-10">
+                              <Mic className="h-7 w-7 animate-pulse" />
                             </div>
-
-                            <Button
-                              onClick={stopVoiceRecording}
-                              variant="destructive"
-                              size="sm"
-                              className="mt-2 font-bold cursor-pointer"
-                            >
-                              Stop Recording
-                            </Button>
                           </div>
-                        )}
 
-                        {voiceRecordingState === "recorded" && (
-                          <div className="space-y-3">
-                            <div className="flex justify-between items-center bg-slate-900/60 rounded-lg p-2.5 border border-slate-800 text-[10px] text-slate-300">
-                              <div className="flex items-center gap-2">
-                                <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-                                <span className="font-medium">Voice Captured: "hello! grid sight"</span>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <Button
-                                  onClick={playRecordedAudio}
-                                  size="icon"
-                                  variant="ghost"
-                                  className="h-6 w-6 text-amber-400 hover:text-amber-300 hover:bg-amber-500/10 cursor-pointer"
-                                  title="Play recorded audio"
-                                >
-                                  {isPlayingRecordedAudio ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
-                                </Button>
-                                <Button
-                                  onClick={resetVoiceRecording}
-                                  size="icon"
-                                  variant="ghost"
-                                  className="h-6 w-6 text-slate-400 hover:text-slate-200 hover:bg-slate-800 cursor-pointer"
-                                  title="Record again"
-                                >
-                                  <RotateCcw className="h-3.5 w-3.5" />
-                                </Button>
-                              </div>
-                            </div>
-
-                            <div className="max-h-36 overflow-y-auto space-y-2 text-sm border-t border-slate-900 pt-2">
-                              {history.map((h, i) => (
-                                <div
-                                  key={i}
-                                  className={`rounded-lg px-2.5 py-1.5 text-xs ${h.role === "user" ? "bg-slate-800 text-slate-200 ml-6" : "bg-amber-500/10 text-amber-100 mr-6 border border-amber-500/20"}`}
-                                >
-                                  {h.text}
-                                </div>
-                              ))}
-                            </div>
-
-                            <div className="flex flex-wrap gap-1 pt-1.5">
-                              {prompts.map((p) => (
-                                <button
-                                  key={p}
-                                  type="button"
-                                  onClick={() => sendCommand(p)}
-                                  className="rounded-full border border-slate-700 bg-slate-800/50 px-2 py-0.5 text-[9px] text-slate-400 hover:border-amber-500/40 hover:text-amber-200 transition-colors"
-                                >
-                                  {p.slice(0, 42)}…
-                                </button>
-                              ))}
-                            </div>
-
-                            <div className="flex gap-2 pt-1">
-                              <input
-                                value={input}
-                                onChange={(e) => setInput(e.target.value)}
-                                onKeyDown={(e) => e.key === "Enter" && sendCommand(input)}
-                                placeholder="Type or use mic…"
-                                className="flex-1 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-200 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-amber-500"
-                              />
-                              <Button
-                                size="icon"
-                                variant={isListening ? "destructive" : "secondary"}
-                                onClick={() => {
-                                  if (isListening) {
-                                    sendCommand(input || prompts[0]);
-                                  } else {
-                                    setListening(true);
-                                    setInput(prompts[0]);
-                                  }
+                          {/* Continuous visualizer bars working continuously as requested */}
+                          <div className="flex items-end gap-1.5 h-8 justify-center mt-2">
+                            {[0.5, 0.9, 0.6, 1.2, 0.4, 0.8, 1.1, 0.5, 0.8, 0.3].map((heightScale, i) => (
+                              <motion.div
+                                key={i}
+                                animate={{
+                                  height: ["10px", `${28 * heightScale}px`, "10px"],
                                 }}
-                                disabled={processing}
-                              >
-                                {isListening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-                              </Button>
-                            </div>
+                                transition={{
+                                  duration: 0.6 + (i % 3) * 0.1,
+                                  repeat: Infinity,
+                                  delay: i * 0.05,
+                                  ease: "easeInOut",
+                                }}
+                                className="w-1 rounded-full bg-amber-500"
+                              />
+                            ))}
                           </div>
-                        )}
-                      </div>
+                        </div>
+
+                        {/* 3. Center Bottom: Active duration and guidance */}
+                        <div className="w-full text-center space-y-2 border-t border-slate-900 pt-3">
+                          <div className="text-[11px] font-mono text-slate-400 font-bold uppercase tracking-wider">
+                            Active: {formatDuration(recordingSeconds)}
+                          </div>
+                          
+                          {/* Instructions helper lines */}
+                          <div className="text-[9px] text-slate-500 max-w-[280px] mx-auto leading-relaxed">
+                            💡 Say <span className="text-amber-400 font-medium">"show latest violations"</span>, <span className="text-amber-400 font-medium">"generate route"</span>, or <span className="text-amber-400 font-medium">"approve"</span>.
+                            <br />
+                            <span className="italic text-slate-600">Continuous hands-free mode. Pause 1.5s to trigger.</span>
+                          </div>
+                        </div>
+                      </>
                     )}
                   </div>
                 ) : (
@@ -679,7 +690,7 @@ export function VoiceAgent({ persona }: VoiceAgentProps) {
                             value={customPhone}
                             onChange={(e) => setCustomPhone(e.target.value)}
                             className="w-full rounded border border-slate-800 bg-slate-900 pl-3 pr-12 py-2 text-slate-200 focus:outline-none focus:border-amber-500/50 text-xs font-mono"
-                            placeholder="......"
+                            placeholder="XXXX"
                           />
                           <button
                             type="button"
