@@ -222,6 +222,10 @@ function handleGeneralIntent(
         matchedSection = "analytics dashboard";
         route = "/analytics";
         elementId = "root";
+      } else if (t.includes("police") || t.includes("control dashboard") || t.includes("control center")) {
+        matchedSection = "police control center";
+        route = "/police";
+        elementId = "root";
       }
 
       spoken = `Navigating to the ${matchedSection} on ${route}.`;
