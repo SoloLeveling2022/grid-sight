@@ -39,6 +39,7 @@ export function VoiceAgent({ persona }: VoiceAgentProps) {
   const addReport = useCitizenStore((s) => s.addReport);
   const [input, setInput] = useState("");
   const [processing, setProcessing] = useState(false);
+  const [orchestrationStep, setOrchestrationStep] = useState<number>(0);
 
   // Selector state: operational or telephony
   const [selectedOption, setSelectedOption] = useState<"operational" | "telephony" | null>(null);
@@ -167,7 +168,7 @@ export function VoiceAgent({ persona }: VoiceAgentProps) {
 
           silenceTimeoutRef.current = setTimeout(() => {
             handleSpeechCommandSubmit(currentText);
-          }, 1500);
+          }, 2000);
         }
       };
 
@@ -199,10 +200,23 @@ export function VoiceAgent({ persona }: VoiceAgentProps) {
     setProcessing(true);
     setInput("");
 
+    setOrchestrationStep(1); // 1. STT Parse
+    const t2 = setTimeout(() => setOrchestrationStep(2), 600); // 2. NLP Intent
+    const t3 = setTimeout(() => setOrchestrationStep(3), 1200); // 3. UI Action Dispatch
+
     try {
       await sendCommand(text);
+      clearTimeout(t2);
+      clearTimeout(t3);
+      setOrchestrationStep(4); // 4. Action Complete
+      setTimeout(() => {
+        setOrchestrationStep(0); // Restore timer/duration state
+      }, 2000);
     } catch (e) {
       console.error("Error submitting command:", e);
+      clearTimeout(t2);
+      clearTimeout(t3);
+      setOrchestrationStep(0);
     } finally {
       setProcessing(false);
       if (recognitionRef.current) {
@@ -646,18 +660,52 @@ export function VoiceAgent({ persona }: VoiceAgentProps) {
                           </div>
                         </div>
 
-                        {/* 3. Center Bottom: Active duration and guidance */}
+                        {/* 3. Center Bottom: Active duration or Orchestration */}
                         <div className="w-full text-center space-y-2 border-t border-slate-900 pt-3">
-                          <div className="text-[11px] font-mono text-slate-400 font-bold uppercase tracking-wider">
-                            Active: {formatDuration(recordingSeconds)}
-                          </div>
-                          
-                          {/* Instructions helper lines */}
-                          <div className="text-[9px] text-slate-500 max-w-[280px] mx-auto leading-relaxed">
-                            💡 Say <span className="text-amber-400 font-medium">"show latest violations"</span>, <span className="text-amber-400 font-medium">"generate route"</span>, or <span className="text-amber-400 font-medium">"approve"</span>.
-                            <br />
-                            <span className="italic text-slate-600">Continuous hands-free mode. Pause 1.5s to trigger.</span>
-                          </div>
+                          {orchestrationStep > 0 ? (
+                            /* Center Bottom: Orchestration Sequence */
+                            <div className="space-y-2">
+                              <div className="text-[10px] font-mono text-slate-400 uppercase tracking-widest font-bold">
+                                Orchestrating Command
+                              </div>
+                              <div className="flex items-center justify-between px-6 text-[9px] font-semibold">
+                                <div className={`flex flex-col items-center gap-1 ${orchestrationStep >= 1 ? "text-amber-400" : "text-slate-600"}`}>
+                                  <span className={`h-2 w-2 rounded-full ${orchestrationStep === 1 ? "bg-amber-400 animate-ping" : orchestrationStep > 1 ? "bg-emerald-500" : "bg-slate-800"}`} />
+                                  <span>1. STT Parse</span>
+                                </div>
+                                <div className={`h-[1px] flex-1 mx-2 bg-slate-800 ${orchestrationStep > 1 ? "bg-emerald-500/50" : ""}`} />
+                                
+                                <div className={`flex flex-col items-center gap-1 ${orchestrationStep >= 2 ? "text-amber-400" : "text-slate-600"}`}>
+                                  <span className={`h-2 w-2 rounded-full ${orchestrationStep === 2 ? "bg-amber-400 animate-ping" : orchestrationStep > 2 ? "bg-emerald-500" : "bg-slate-800"}`} />
+                                  <span>2. NLP Intent</span>
+                                </div>
+                                <div className={`h-[1px] flex-1 mx-2 bg-slate-800 ${orchestrationStep > 2 ? "bg-emerald-500/50" : ""}`} />
+
+                                <div className={`flex flex-col items-center gap-1 ${orchestrationStep >= 3 ? "text-amber-400" : "text-slate-600"}`}>
+                                  <span className={`h-2 w-2 rounded-full ${orchestrationStep === 3 ? "bg-amber-400 animate-ping" : orchestrationStep > 3 ? "bg-emerald-500" : "bg-slate-800"}`} />
+                                  <span>3. UI Action</span>
+                                </div>
+                              </div>
+                              <div className="text-[9px] text-slate-500 font-mono italic animate-pulse">
+                                {orchestrationStep === 1 && "Parsing voice stream..."}
+                                {orchestrationStep === 2 && "Matching pipeline intent..."}
+                                {orchestrationStep === 3 && "Executing full-stack update..."}
+                                {orchestrationStep === 4 && "⚡ Actions complete. Resuming listener."}
+                              </div>
+                            </div>
+                          ) : (
+                            /* Center Bottom: Active duration and guidance */
+                            <>
+                              <div className="text-[11px] font-mono text-slate-400 font-bold uppercase tracking-wider">
+                                Active: {formatDuration(recordingSeconds)}
+                              </div>
+                              <div className="text-[9px] text-slate-500 max-w-[280px] mx-auto leading-relaxed">
+                                💡 Say <span className="text-amber-400 font-medium">"show latest violations"</span>, <span className="text-amber-400 font-medium">"generate route"</span>, or <span className="text-amber-400 font-medium">"approve"</span>.
+                                <br />
+                                <span className="italic text-slate-600">Continuous hands-free mode. Pause 2.0s to trigger.</span>
+                              </div>
+                            </>
+                          )}
                         </div>
                       </>
                     )}
