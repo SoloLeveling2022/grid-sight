@@ -181,11 +181,15 @@ export function VoiceAgent({ persona }: VoiceAgentProps) {
 
       recognition.onend = () => {
         if (selectedOption === "operational") {
-          try {
-            recognition.start();
-          } catch (e) {
-            console.error("Failed to restart SpeechRecognition:", e);
-          }
+          setTimeout(() => {
+            try {
+              if (recognitionRef.current) {
+                recognitionRef.current.start();
+              }
+            } catch (e) {
+              console.error("Failed to restart SpeechRecognition:", e);
+            }
+          }, 300);
         }
       };
 
@@ -200,24 +204,87 @@ export function VoiceAgent({ persona }: VoiceAgentProps) {
     setProcessing(true);
     setInput("");
 
-    setOrchestrationStep(1); // 1. STT Parse
-    const t2 = setTimeout(() => setOrchestrationStep(2), 600); // 2. NLP Intent
-    const t3 = setTimeout(() => setOrchestrationStep(3), 1200); // 3. UI Action Dispatch
-
     try {
-      await sendCommand(text);
-      clearTimeout(t2);
-      clearTimeout(t3);
-      setOrchestrationStep(4); // 4. Action Complete
-      setTimeout(() => {
-        setOrchestrationStep(0); // Restore timer/duration state
-      }, 2000);
+      // Step 1: STT Parse
+      setOrchestrationStep(1);
+      await new Promise((resolve) => setTimeout(resolve, 600));
+
+      // Step 2: NLP Intent Matcher (Fetch API)
+      setOrchestrationStep(2);
+      const sessionId = await ensureSession();
+      const res = await fetch("/api/voice/command", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId,
+          persona,
+          transcript: text,
+          context: persona === "police" ? { selectedCorridor: usePoliceStore.getState().selectedCorridor ?? undefined } : {},
+        }),
+      });
+      const data = await res.json();
+
+      // Step 3: UI Action Dispatcher
+      setOrchestrationStep(3);
+      await new Promise((resolve) => setTimeout(resolve, 800));
+
+      setLastResponse(data);
+      addHistory("assistant", data.spokenResponse);
+
+      for (const action of data.uiActions ?? []) {
+        if (action.type === "filter_corridor" && action.payload.corridor) {
+          setSelectedCorridor(String(action.payload.corridor));
+        }
+        if (action.type === "show_alternate_route") {
+          setAlternateRoute({
+            from: String(action.payload.from ?? ""),
+            to: String(action.payload.to ?? ""),
+            via: String(action.payload.via ?? ""),
+          });
+        }
+        if (action.type === "report_obstruction") {
+          addReport("Voice-reported roadside obstruction");
+        }
+        if (action.type === "generate_patrol_route") {
+          useViolationPoliceStore.getState().fetchPatrolRoute(Number(action.payload.limit || 5));
+        }
+        if (action.type === "latest_violations") {
+          useViolationPoliceStore.getState().fetchCases({ limit: 20 });
+        }
+        if (action.type === "top_hotspots") {
+          useViolationPoliceStore.getState().fetchHotspots();
+        }
+        if (action.type === "pending_cases") {
+          useViolationPoliceStore.getState().fetchCases({ status: "pending" });
+        }
+        if (action.type === "approve_case") {
+          const selectedId = useViolationPoliceStore.getState().selectedCaseId;
+          if (selectedId) {
+            useViolationPoliceStore.getState().approveCase(selectedId);
+          }
+        }
+        if (action.type === "reject_case") {
+          const selectedId = useViolationPoliceStore.getState().selectedCaseId;
+          if (selectedId) {
+            useViolationPoliceStore.getState().rejectCase(selectedId);
+          }
+        }
+        if (action.type === "avoid_hotspots_route") {
+          setAlternateRoute({
+            from: "Koramangala",
+            to: "MG Road",
+            via: "Inner Ring Road (Avoids Hotspots)",
+          });
+        }
+      }
+
+      // Step 4: Complete
+      setOrchestrationStep(4);
+      await new Promise((resolve) => setTimeout(resolve, 1500));
     } catch (e) {
       console.error("Error submitting command:", e);
-      clearTimeout(t2);
-      clearTimeout(t3);
-      setOrchestrationStep(0);
     } finally {
+      setOrchestrationStep(0);
       setProcessing(false);
       if (recognitionRef.current) {
         try {
@@ -699,11 +766,11 @@ export function VoiceAgent({ persona }: VoiceAgentProps) {
                               <div className="text-[11px] font-mono text-slate-400 font-bold uppercase tracking-wider">
                                 Active: {formatDuration(recordingSeconds)}
                               </div>
-                              <div className="text-[9px] text-slate-500 max-w-[280px] mx-auto leading-relaxed">
+                              {/* <div className="text-[9px] text-slate-500 max-w-[280px] mx-auto leading-relaxed">
                                 💡 Say <span className="text-amber-400 font-medium">"show latest violations"</span>, <span className="text-amber-400 font-medium">"generate route"</span>, or <span className="text-amber-400 font-medium">"approve"</span>.
                                 <br />
                                 <span className="italic text-slate-600">Continuous hands-free mode. Pause 2.0s to trigger.</span>
-                              </div>
+                              </div> */}
                             </>
                           )}
                         </div>

@@ -23,7 +23,7 @@ function parseIntent(transcript: string, persona: "police" | "citizen"): string 
   const t = transcript.toLowerCase();
   if (persona === "police") {
     // Generate Patrol Route
-    if ((t.includes("patrol") && (t.includes("route") || t.includes("generate") || t.includes("create") || t.includes("recommend"))) || t === "patrol" || t === "patrol route") {
+    if (t.includes("route") || t.includes("patrol") || t.includes("direction") || t.includes("path")) {
       return "generate_patrol_route";
     }
     // Latest Violations
